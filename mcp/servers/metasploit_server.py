@@ -33,12 +33,12 @@ SERVER_PORT = int(os.getenv("METASPLOIT_PORT", "8003"))
 DEBUG = os.getenv("MSF_DEBUG", "false").lower() == "true"
 
 # Timing configuration (set by run_servers.py or use defaults)
-# Brute force (run command): 30 min timeout, 2 min quiet (with VERBOSE=true, output comes frequently)
+# Brute force (run command): 30 min timeout, 20s quiet (with VERBOSE=true, output comes frequently)
 MSF_RUN_TIMEOUT = int(os.getenv("MSF_RUN_TIMEOUT", "1800"))
-MSF_RUN_QUIET_PERIOD = float(os.getenv("MSF_RUN_QUIET_PERIOD", "120"))
-# CVE exploits (exploit command): 10 min timeout, 3 min quiet
+MSF_RUN_QUIET_PERIOD = float(os.getenv("MSF_RUN_QUIET_PERIOD", "20"))
+# CVE exploits (exploit command): 10 min timeout, 20sec quiet
 MSF_EXPLOIT_TIMEOUT = int(os.getenv("MSF_EXPLOIT_TIMEOUT", "600"))
-MSF_EXPLOIT_QUIET_PERIOD = float(os.getenv("MSF_EXPLOIT_QUIET_PERIOD", "180"))
+MSF_EXPLOIT_QUIET_PERIOD = float(os.getenv("MSF_EXPLOIT_QUIET_PERIOD", "20"))
 # Other commands: 2 min timeout, 3s quiet
 MSF_DEFAULT_TIMEOUT = int(os.getenv("MSF_DEFAULT_TIMEOUT", "120"))
 MSF_DEFAULT_QUIET_PERIOD = float(os.getenv("MSF_DEFAULT_QUIET_PERIOD", "3"))
@@ -433,11 +433,16 @@ class PersistentMsfConsole:
         # Check if we're at the msf> prompt (safe — do nothing)
         elif 'msf' in prompt_text:
             return
-        # Check if we're inside a raw shell ($ or # prompt) — could be:
-        #  a) meterpreter sub-shell (user ran `shell` from meterpreter) → exit returns to meterpreter
-        #  b) standalone raw shell session left by agent → exit closes it (acceptable)
+        # Check if we're inside a raw shell ($ or # prompt).
+        # This should only happen if the agent left msfconsole inside a session
+        # (e.g., after an exploit). The UI's interact_session never enters shell
+        # sessions interactively (uses `sessions -c` instead), so this is a
+        # recovery path for agent-created stuck states only.
+        # Send `exit` to leave — this may kill the shell session, but it's
+        # the only reliable way to recover msfconsole through a subprocess pipe
+        # (Ctrl+Z doesn't work reliably through pipes).
         elif re.search(r'[\$#]\s*$', prompt_text):
-            print(f"[MSF] Console in raw shell (prompt: {prompt_text!r}) — sending 'exit' to leave OS shell")
+            print(f"[MSF] Console stuck in raw shell (prompt: {prompt_text!r}) — sending 'exit' to recover msf>")
             self._quick_execute("exit", timeout=5, quiet_period=1.0)
             # After exiting the OS shell, we might be at meterpreter > — check and background
             while not self.output_queue.empty():
@@ -479,8 +484,8 @@ class PersistentMsfConsole:
             try:
                 # Ensure we're at msf> prompt, not inside a session
                 self._ensure_msf_prompt()
-                raw_sessions = self._quick_execute("sessions -l", timeout=10, quiet_period=5.0)
-                raw_jobs = self._quick_execute("jobs -l", timeout=10, quiet_period=5.0)
+                raw_sessions = self._quick_execute("sessions -l", timeout=10, quiet_period=1.0)
+                raw_jobs = self._quick_execute("jobs -l", timeout=10, quiet_period=1.0)
                 parsed_sessions = self._parse_sessions_output(raw_sessions)
                 parsed_jobs = self._parse_jobs_output(raw_jobs)
                 with self._detail_lock:
@@ -635,71 +640,151 @@ class PersistentMsfConsole:
             }
 
     def interact_session(self, session_id: int, command: str) -> dict:
-        """Send a command to a specific session. Uses try-with-timeout on lock."""
-        acquired = self.lock.acquire(timeout=5)
+        """Send a command to a specific session. Uses try-with-timeout on lock.
+
+        Shell sessions use `sessions -c` to execute commands without entering
+        the session interactively. This avoids the enter/exit problem entirely:
+        - `exit` inside a shell session DESTROYS it
+        - Ctrl+Z (\x1a) doesn't work reliably through subprocess pipes
+        - `sessions -c "cmd" -i <id>` runs the command from the msf> prompt
+          and never leaves it, keeping the session alive.
+
+        Meterpreter sessions still use interactive mode (sessions -i) because
+        meterpreter commands (sysinfo, upload, migrate, etc.) require the
+        meterpreter prompt context. `background` works reliably for meterpreter.
+        """
+        acquired = self.lock.acquire(timeout=8)
         if not acquired:
             return {"busy": True, "message": "Agent is executing a command, try again shortly"}
         try:
-            # Determine session type from cache for correct return command
-            session_type = "meterpreter"
+            # Determine session type from cache
+            session_type = None
             with self._detail_lock:
                 for s in self._session_details:
                     if s.get("id") == session_id:
-                        session_type = s.get("type", "meterpreter")
+                        session_type = s.get("type")
                         break
 
+            # Cache miss — force an inline lookup
+            if session_type is None:
+                raw = self._quick_execute("sessions -l", timeout=10, quiet_period=2.0)
+                parsed = self._parse_sessions_output(raw)
+                with self._detail_lock:
+                    self._session_details = parsed
+                    self._detail_cache_time = time.time()
+                for s in parsed:
+                    if s.get("id") == session_id:
+                        session_type = s.get("type")
+                        break
+
+            # Default to "shell" — the non-interactive path is safe for both
+            if session_type is None:
+                session_type = "shell"
+
+            # ─── SHELL SESSIONS: non-interactive via `sessions -c` ───
+            if session_type != "meterpreter":
+                escaped_cmd = command.replace('"', '\\"')
+
+                # Clear pending output
+                while not self.output_queue.empty():
+                    try:
+                        self.output_queue.get_nowait()
+                    except queue.Empty:
+                        break
+
+                # Send command
+                try:
+                    self.process.stdin.write(
+                        f'sessions -c "{escaped_cmd}" -i {session_id}\n'
+                    )
+                    self.process.stdin.flush()
+                except Exception as e:
+                    return {"busy": False, "output": f"[ERROR] Failed to send command: {e}"}
+
+                # Prompt-detection: read lines until msf prompt reappears.
+                # sessions -c output flow:
+                #   1. command echo (contains "sessions -c")
+                #   2. [*] Running '...' on shell session N (...)
+                #   3. <actual command output>       ← we want this
+                #   4. msf prompt                    ← signals done
+                _ansi_re = re.compile(r'\x1b\[[\?]?[0-9;]*[a-zA-Z]')
+                _osc_re = re.compile(r'\x1b\][^\x07]*\x07')
+                _charset_re = re.compile(r'\x1b[()][AB012]')
+                _msf_prompt_re = re.compile(r'^msf\d?\s|^msf6')
+
+                output_lines = []
+                end_time = time.time() + 30
+                saw_echo = False
+
+                while time.time() < end_time:
+                    try:
+                        line = self.output_queue.get(timeout=0.2)
+                        clean = _ansi_re.sub('', line.rstrip())
+                        clean = _osc_re.sub('', clean)
+                        clean = _charset_re.sub('', clean).strip()
+
+                        if not clean:
+                            continue
+
+                        # Command echo — marks the start
+                        if 'sessions -c' in clean:
+                            saw_echo = True
+                            continue
+
+                        # msf prompt after echo — command is done
+                        if saw_echo and _msf_prompt_re.match(clean):
+                            break
+
+                        # After echo: collect output, skip [*] noise lines
+                        if saw_echo:
+                            if clean.startswith('[*] Running '):
+                                continue
+                            if clean.startswith('[*] Command output'):
+                                continue
+                            output_lines.append(clean)
+
+                    except queue.Empty:
+                        continue
+
+                output = '\n'.join(output_lines).strip()
+                if not output:
+                    output = "(no output)"
+                return {"busy": False, "output": _clean_ansi_output(output)}
+
+            # ─── METERPRETER SESSIONS: interactive mode ───
             # Detect command type for meterpreter sessions
             _SHELL_COMMANDS = {"shell", "irb", "python", "pry"}
             cmd_parts = command.strip().lower().split()
             cmd_lower = cmd_parts[0] if cmd_parts else ""
             has_inline_flag = len(cmd_parts) > 1 and cmd_parts[1] == "-c"
-            opens_subshell = (
-                session_type == "meterpreter"
-                and cmd_lower in _SHELL_COMMANDS
-                and not has_inline_flag
-            )
-            is_inline_shell = (
-                session_type == "meterpreter"
-                and cmd_lower == "shell"
-                and has_inline_flag
-            )
+            opens_subshell = cmd_lower in _SHELL_COMMANDS and not has_inline_flag
+            is_inline_shell = cmd_lower == "shell" and has_inline_flag
 
-            # Enter session
-            self._quick_execute(f"sessions -i {session_id}", timeout=10, quiet_period=1.0)
+            # Enter meterpreter session
+            enter_output = self._quick_execute(f"sessions -i {session_id}", timeout=10, quiet_period=1.0)
+            if "Invalid session" in enter_output or "not found" in enter_output.lower():
+                return {"busy": False, "output": f"[ERROR] Session {session_id} is no longer active"}
 
             if is_inline_shell:
-                # "shell -c 'cmd'" creates a channel that may not auto-close
-                # reliably, leaving msfconsole stuck in channel-read mode.
-                # Instead: open interactive shell → run the inner command →
-                # exit shell → background.  This is reliable because the
-                # channel stays open until we explicitly send 'exit'.
+                # "shell -c 'cmd'": open shell → run → exit shell → background meterpreter
                 inner_cmd = re.sub(
                     r'^shell\s+-c\s+', '', command, flags=re.IGNORECASE
                 ).strip()
-                # Strip surrounding quotes from inner command
                 if (len(inner_cmd) >= 2
                         and inner_cmd[0] in ('"', "'")
                         and inner_cmd[-1] == inner_cmd[0]):
                     inner_cmd = inner_cmd[1:-1]
-                # Open interactive shell (channel stays open)
                 self._quick_execute("shell", timeout=10, quiet_period=1.5)
-                # Run the actual command through the channel
                 output = self._quick_execute(inner_cmd, timeout=30, quiet_period=1.5)
-                # Exit shell → close channel → back to meterpreter
                 self._quick_execute("exit", timeout=5, quiet_period=0.5)
-                # Background meterpreter → back to msf
                 self._quick_execute("background", timeout=5, quiet_period=0.5)
             else:
-                # Run user command as-is
                 output = self._quick_execute(command, timeout=30, quiet_period=1.5)
-                # Return to msf console (type-aware)
                 if opens_subshell:
                     self._quick_execute("exit", timeout=5, quiet_period=0.5)
                     self._quick_execute("background", timeout=5, quiet_period=0.5)
-                elif session_type == "meterpreter":
-                    self._quick_execute("background", timeout=5, quiet_period=0.5)
                 else:
-                    self._quick_execute("exit", timeout=5, quiet_period=0.5)
+                    self._quick_execute("background", timeout=5, quiet_period=0.5)
 
             return {"busy": False, "output": _clean_ansi_output(output)}
         except Exception as e:
@@ -715,19 +800,6 @@ class PersistentMsfConsole:
         try:
             output = self._quick_execute(f"sessions -k {session_id}")
             self.session_ids.discard(session_id)
-            return {"busy": False, "output": _clean_ansi_output(output)}
-        finally:
-            self.lock.release()
-
-    def upgrade_session(self, session_id: int) -> dict:
-        """Upgrade a shell session to meterpreter."""
-        acquired = self.lock.acquire(timeout=5)
-        if not acquired:
-            return {"busy": True, "message": "Agent is busy"}
-        try:
-            output = self._quick_execute(
-                f"sessions -u {session_id}", timeout=30, quiet_period=10.0
-            )
             return {"busy": False, "output": _clean_ansi_output(output)}
         finally:
             self.lock.release()
@@ -1081,10 +1153,6 @@ class SessionProgressHandler(BaseHTTPRequestHandler):
 
             elif resource == 'sessions' and res_id is not None and action == 'kill':
                 result = msf.kill_session(res_id)
-                self._send_json(200, result)
-
-            elif resource == 'sessions' and res_id is not None and action == 'upgrade':
-                result = msf.upgrade_session(res_id)
                 self._send_json(200, result)
 
             elif resource == 'jobs' and res_id is not None and action == 'kill':

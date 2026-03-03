@@ -438,6 +438,9 @@ class AgentState(TypedDict):
     # Internal: prior chain context string (loaded once at session init)
     _prior_chain_context: Optional[str]
 
+    # Response tier for adaptive formatting ("conversational", "summary", "full_report")
+    _response_tier: Optional[str]
+
     # Metasploit state tracking
     msf_session_reset_done: bool  # True if metasploit was reset at start of this session
 
@@ -551,6 +554,7 @@ def create_initial_state(
         "chain_decisions_memory": [],
         "_last_chain_step_id": None,
         "_prior_chain_context": None,
+        "_response_tier": None,
         # Metasploit state
         "msf_session_reset_done": False,
     }

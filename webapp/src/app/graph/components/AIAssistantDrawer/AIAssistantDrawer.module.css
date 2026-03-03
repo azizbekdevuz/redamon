@@ -362,6 +362,22 @@
   background: var(--bg-primary);
 }
 
+.templateOsLabel {
+  width: 100%;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  padding: var(--space-1) 0 2px 0;
+  margin-top: var(--space-1);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.templateOsLabel:first-child {
+  margin-top: 0;
+}
+
 /* =============================================================================
    MESSAGE BUBBLES
    ============================================================================= */
@@ -754,6 +770,20 @@
   letter-spacing: 0.5px;
 }
 
+.summaryBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  background: rgba(25, 118, 210, 0.12);
+  border: 1px solid rgba(25, 118, 210, 0.3);
+  border-radius: var(--radius-sm);
+  color: #1976d2;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
 .reportDownloadButton {
   display: inline-flex;
   align-items: center;
@@ -777,6 +807,126 @@
 
 .reportDownloadButton:active {
   transform: scale(0.96);
+}
+
+.copyButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  margin-top: 6px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition-all);
+  opacity: 0;
+}
+
+.message:hover .copyButton {
+  opacity: 1;
+}
+
+.copyButton:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--text-secondary);
+}
+
+.copyButton:active {
+  transform: scale(0.96);
+}
+
+.copyButtonCopied {
+  opacity: 1;
+  color: #4caf50;
+  border-color: rgba(76, 175, 80, 0.3);
+}
+
+/* --- Code block copy button --- */
+
+.codeBlockWrapper {
+  position: relative;
+}
+
+.codeBlockCopyButton {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: var(--transition-all);
+  opacity: 0;
+  z-index: 1;
+}
+
+.codeBlockWrapper:hover .codeBlockCopyButton {
+  opacity: 1;
+}
+
+.codeBlockCopyButton:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: var(--text-secondary);
+}
+
+.codeBlockCopyButtonCopied {
+  opacity: 1;
+  color: #4caf50;
+  border-color: rgba(76, 175, 80, 0.3);
+  background: rgba(76, 175, 80, 0.1);
+}
+
+/* --- Table cell copy button --- */
+
+.tableCellContent {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tableCellCopyButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: var(--transition-all);
+  opacity: 0;
+  flex-shrink: 0;
+}
+
+td:hover .tableCellCopyButton {
+  opacity: 0.6;
+}
+
+.tableCellCopyButton:hover {
+  opacity: 1 !important;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.tableCellCopyButtonCopied {
+  opacity: 1 !important;
+  color: #4caf50;
 }
 
 /* =============================================================================

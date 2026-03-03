@@ -61,6 +61,9 @@ from prompts import (
     PHASE_TRANSITION_MESSAGE,
     USER_QUESTION_MESSAGE,
     FINAL_REPORT_PROMPT,
+    CONVERSATIONAL_RESPONSE_PROMPT,
+    SUMMARY_RESPONSE_PROMPT,
+    determine_response_tier,
     INTERNAL_TOOLS,
     get_phase_tools,
     build_phase_definitions,
@@ -1613,7 +1616,7 @@ class AgentOrchestrator:
         }
 
     async def _generate_response_node(self, state: AgentState, config = None) -> dict:
-        """Generate final response summarizing the session."""
+        """Generate final response, adaptive to interaction complexity."""
         user_id, project_id, session_id = get_identifiers(state, config)
 
         # If this was an aborted phase transition, just output the cancel message
@@ -1624,36 +1627,85 @@ class AgentOrchestrator:
                 "_abort_transition": False,
             }
 
-        logger.info(f"[{user_id}/{project_id}/{session_id}] Generating final response...")
+        # Determine response tier based on state signals (no LLM call)
+        tier = determine_response_tier(
+            execution_trace=state.get("execution_trace", []),
+            current_phase=state.get("current_phase", "informational"),
+            attack_path_type=state.get("attack_path_type", "cve_exploit"),
+            phase_history=state.get("phase_history", []),
+            target_info=state.get("target_info", {}),
+            objective_history=state.get("objective_history", []),
+            current_objective_index=state.get("current_objective_index", 0),
+            conversation_objectives=state.get("conversation_objectives", []),
+        )
 
-        # Emit a thinking event so the frontend shows a loading indicator
+        logger.info(f"[{user_id}/{project_id}/{session_id}] Generating final response (tier: {tier})...")
+
+        # Get current objective
+        objectives = state.get("conversation_objectives", [])
+        current_idx = state.get("current_objective_index", 0)
+        current_objective = (
+            objectives[current_idx].get("content", "")
+            if current_idx < len(objectives)
+            else state.get("original_objective", "")
+        )
+
+        # Emit a thinking event with tier-appropriate message
         streaming_cb = self._streaming_callbacks.get(session_id)
         if streaming_cb:
+            thinking_messages = {
+                "conversational": ("Preparing response...", "Formulating a direct answer."),
+                "summary": ("Preparing summary...", "Compiling a brief summary of the session."),
+                "full_report": ("Generating final summary report...", "Compiling all findings, tool outputs, and recommendations into a comprehensive report."),
+            }
+            thought, reasoning = thinking_messages.get(tier, thinking_messages["full_report"])
             try:
                 await streaming_cb.on_thinking(
                     state.get("current_iteration", 0),
                     state.get("current_phase", "informational"),
-                    "Generating final summary report...",
-                    "Compiling all findings, tool outputs, and recommendations into a comprehensive report."
+                    thought,
+                    reasoning,
                 )
             except Exception as e:
                 logger.error(f"Error emitting report thinking event: {e}")
 
-        # Build final report prompt
-        report_prompt = FINAL_REPORT_PROMPT.format(
-            objective=state.get("original_objective", ""),
-            iteration_count=state.get("current_iteration", 0),
-            final_phase=state.get("current_phase", "informational"),
-            completion_reason=state.get("completion_reason", "Session ended"),
-            execution_trace=format_execution_trace(
-                state.get("execution_trace", []),
-                objectives=state.get("conversation_objectives", []),
-                objective_history=state.get("objective_history", []),
-                current_objective_index=state.get("current_objective_index", 0)
-            ),
-            target_info=json_dumps_safe(state.get("target_info", {}), indent=2),
-            todo_list=format_todo_list(state.get("todo_list", [])),
+        # Build common formatted strings
+        exec_trace_formatted = format_execution_trace(
+            state.get("execution_trace", []),
+            objectives=state.get("conversation_objectives", []),
+            objective_history=state.get("objective_history", []),
+            current_objective_index=state.get("current_objective_index", 0),
         )
+        target_info_str = json_dumps_safe(state.get("target_info", {}), indent=2)
+
+        # Select prompt based on tier
+        if tier == "conversational":
+            report_prompt = CONVERSATIONAL_RESPONSE_PROMPT.format(
+                objective=current_objective,
+                completion_reason=state.get("completion_reason", "Session ended"),
+                execution_trace=exec_trace_formatted,
+                target_info=target_info_str,
+            )
+        elif tier == "summary":
+            report_prompt = SUMMARY_RESPONSE_PROMPT.format(
+                objective=current_objective,
+                completion_reason=state.get("completion_reason", "Session ended"),
+                attack_path_type=state.get("attack_path_type", "cve_exploit"),
+                iteration_count=state.get("current_iteration", 0),
+                final_phase=state.get("current_phase", "informational"),
+                execution_trace=exec_trace_formatted,
+                target_info=target_info_str,
+            )
+        else:  # full_report
+            report_prompt = FINAL_REPORT_PROMPT.format(
+                objective=current_objective,
+                iteration_count=state.get("current_iteration", 0),
+                final_phase=state.get("current_phase", "informational"),
+                completion_reason=state.get("completion_reason", "Session ended"),
+                execution_trace=exec_trace_formatted,
+                target_info=target_info_str,
+                todo_list=format_todo_list(state.get("todo_list", [])),
+            )
 
         response = await self.llm.ainvoke([HumanMessage(content=report_prompt)])
 
@@ -1680,6 +1732,7 @@ class AgentOrchestrator:
             "task_complete": True,
             "completion_reason": state.get("completion_reason") or "Task completed successfully",
             "_report_generated": True,
+            "_response_tier": tier,
         }
 
     # =========================================================================
@@ -1983,7 +2036,8 @@ class AgentOrchestrator:
                     response.answer,
                     response.iteration_count,
                     response.current_phase,
-                    response.task_complete
+                    response.task_complete,
+                    response_tier=final_state.get("_response_tier", "full_report"),
                 )
                 return response
             else:
@@ -2045,7 +2099,8 @@ class AgentOrchestrator:
                     response.answer,
                     response.iteration_count,
                     response.current_phase,
-                    response.task_complete
+                    response.task_complete,
+                    response_tier=final_state.get("_response_tier", "full_report"),
                 )
                 return response
             else:
@@ -2105,7 +2160,8 @@ class AgentOrchestrator:
                     response.answer,
                     response.iteration_count,
                     response.current_phase,
-                    response.task_complete
+                    response.task_complete,
+                    response_tier=final_state.get("_response_tier", "full_report"),
                 )
                 return response
             else:
@@ -2157,7 +2213,8 @@ class AgentOrchestrator:
                     response.answer,
                     response.iteration_count,
                     response.current_phase,
-                    response.task_complete
+                    response.task_complete,
+                    response_tier=final_state.get("_response_tier", "full_report"),
                 )
                 return response
             else:

@@ -127,12 +127,6 @@
   background: rgba(239, 68, 68, 0.08);
 }
 
-.upgradeBtn:hover {
-  border-color: rgba(139, 92, 246, 0.4);
-  color: #a78bfa;
-  background: rgba(139, 92, 246, 0.08);
-}
-
 .actionBtn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -146,12 +140,6 @@
   border-color: rgba(239, 68, 68, 0.3);
   color: #ef4444;
   background: rgba(239, 68, 68, 0.06);
-}
-
-.upgradeBtn.loading {
-  border-color: rgba(139, 92, 246, 0.3);
-  color: #a78bfa;
-  background: rgba(139, 92, 246, 0.06);
 }
 
 @keyframes spin {

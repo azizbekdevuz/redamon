@@ -176,6 +176,14 @@ Analyze the user's request to understand their intent:
   3. **Once in exploitation phase, follow the MANDATORY EXPLOITATION WORKFLOW (see EXPLOITATION_TOOLS section)**
 - **IMPORTANT:** For full exploitation, go directly to exploitation phase — but lightweight curl probing is allowed if graph lacks vuln data
 
+**Payload / Handler Intent** - Keywords: "generate", "payload", "reverse shell", "msfvenom", "handler", "listener", "one-liner", "backdoor", "malicious document"
+- If the user asks to GENERATE a payload, set up a handler/listener, or create a reverse shell:
+  1. Request phase transition to exploitation IMMEDIATELY
+  2. Do NOT attempt to generate payloads or set up listeners in informational phase
+  3. **NEVER use `nc`, `ncat`, `netcat`, or `socat` as a listener — even for plain shell payloads**
+  4. Only Metasploit `exploit/multi/handler` (via `metasploit_console`) creates tracked sessions visible in the RedAmon UI
+  5. Using `kali_shell` with msfvenom to generate a payload is acceptable, but the HANDLER must always use `metasploit_console`
+
 **Research Intent** - Keywords: "find", "show", "what", "list", "scan", "discover", "enumerate"
 - If the user wants information/recon, use the graph-first approach below
 - Query the graph for vulnerabilities first — if graph has no data, use curl to probe for common vulns
@@ -505,6 +513,147 @@ Generate a concise but comprehensive report including:
 6. **Recommendations**: Next steps or remediation advice
 7. **Limitations**: What couldn't be tested or verified
 """
+
+
+# =============================================================================
+# CONVERSATIONAL RESPONSE PROMPT (tier: conversational)
+# =============================================================================
+
+CONVERSATIONAL_RESPONSE_PROMPT = """You completed an informational request. Respond directly and naturally.
+
+## Original Request
+{objective}
+
+## Completion Reason
+{completion_reason}
+
+## Data Gathered
+{execution_trace}
+
+## Target Intelligence
+{target_info}
+
+---
+
+Respond directly to the user's request in a clear, conversational tone.
+- Present the relevant data/findings clearly
+- Use markdown formatting (tables, lists) if the data warrants it
+- Do NOT use a report structure with numbered sections
+- Do NOT include "Recommendations", "Limitations", or "Summary" headers
+- If the data answers the question fully, just present it
+- Be concise — this is a direct answer, not a report
+"""
+
+
+# =============================================================================
+# SUMMARY RESPONSE PROMPT (tier: summary)
+# =============================================================================
+
+SUMMARY_RESPONSE_PROMPT = """Generate a brief summary of the completed task.
+
+## Original Objective
+{objective}
+
+## Completion Reason
+{completion_reason}
+
+## Attack Path Type
+{attack_path_type}
+
+## Execution Summary
+- Total iterations: {iteration_count}
+- Final phase: {final_phase}
+
+## Execution Trace
+{execution_trace}
+
+## Target Intelligence Gathered
+{target_info}
+
+---
+
+Generate a brief, focused summary. Structure depends on the attack path:
+
+**For phishing/social engineering:**
+1. **Payload Details**: What was generated (type, format, filename, location)
+2. **Handler Status**: Whether the handler is running, which port/payload
+3. **Delivery**: How to deliver the artifact (file download, email, web delivery URL)
+
+**For reconnaissance/scanning:**
+1. **Summary**: What was discovered
+2. **Key Findings**: Important results with details
+
+**For other attack paths:**
+1. **Summary**: Brief overview of what was accomplished
+2. **Key Findings**: Most important discoveries
+3. **Next Steps**: What could be done next (if relevant)
+
+Keep it concise — 2-3 short sections maximum. No "Limitations" section unless something critical failed.
+"""
+
+
+# =============================================================================
+# RESPONSE TIER DETERMINATION
+# =============================================================================
+
+def determine_response_tier(
+    execution_trace: list,
+    current_phase: str,
+    attack_path_type: str,
+    phase_history: list,
+    target_info: dict,
+    objective_history: list,
+    current_objective_index: int,
+    conversation_objectives: list,
+) -> str:
+    """Determine the response tier based on state signals.
+
+    Returns: "conversational", "summary", or "full_report"
+    """
+    # Count tool calls for the CURRENT objective only
+    completed_step_ids: set = set()
+    for outcome in (objective_history or []):
+        completed_step_ids.update(outcome.get("execution_steps", []))
+
+    current_steps = [
+        s for s in execution_trace
+        if s.get("step_id") not in completed_step_ids
+    ]
+
+    tool_calls = [s for s in current_steps if s.get("tool_name")]
+    tool_count = len(tool_calls)
+
+    # Unique tool names used (excluding query_graph which is passive)
+    active_tools = {s["tool_name"] for s in tool_calls if s["tool_name"] != "query_graph"}
+    only_graph_queries = len(active_tools) == 0 and tool_count > 0
+
+    # Check which phases were reached during the current objective
+    phases_reached = {s.get("phase") for s in current_steps if s.get("phase")}
+    reached_exploitation = "exploitation" in phases_reached or "post_exploitation" in phases_reached
+
+    # Check if credentials or sessions were found
+    has_credentials = bool(target_info.get("credentials"))
+    has_sessions = bool(target_info.get("sessions"))
+
+    # --- Phishing/SE always gets summary (report sections don't apply) ---
+    if attack_path_type == "phishing_social_engineering":
+        return "summary"
+
+    # --- Tier 1: Conversational ---
+    if tool_count == 0:
+        return "conversational"
+    if only_graph_queries and not reached_exploitation:
+        return "conversational"
+
+    # --- Tier 3: Full Report ---
+    if reached_exploitation and tool_count >= 5:
+        return "full_report"
+    if attack_path_type in ("cve_exploit", "brute_force_credential_guess"):
+        if has_credentials or has_sessions:
+            return "full_report"
+
+    # --- Tier 2: Summary (everything else) ---
+    return "summary"
 
 
 TEXT_TO_CYPHER_SYSTEM = """You are a Neo4j Cypher query expert for a security reconnaissance database.

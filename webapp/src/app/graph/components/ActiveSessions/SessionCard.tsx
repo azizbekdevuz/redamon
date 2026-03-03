@@ -1,7 +1,7 @@
 'use client'
 
 import { memo, useState, useCallback } from 'react'
-import { Monitor, Globe, MessageSquare, Skull, ArrowUpCircle, Square, Loader2 } from 'lucide-react'
+import { Monitor, Globe, MessageSquare, Skull, Square, Loader2 } from 'lucide-react'
 import type { MsfSession, MsfJob, NonMsfSession } from '@/lib/websocket-types'
 import styles from './SessionCard.module.css'
 
@@ -12,7 +12,6 @@ interface SessionCardProps {
   isSelected: boolean
   onSelect: () => void
   onKill: () => void
-  onUpgrade: () => void
 }
 
 export const SessionCard = memo(function SessionCard({
@@ -20,23 +19,15 @@ export const SessionCard = memo(function SessionCard({
   isSelected,
   onSelect,
   onKill,
-  onUpgrade,
 }: SessionCardProps) {
   const isMeterpreter = session.type === 'meterpreter'
   const [killing, setKilling] = useState(false)
-  const [upgrading, setUpgrading] = useState(false)
 
   const handleKill = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation()
     setKilling(true)
     try { await onKill() } finally { setKilling(false) }
   }, [onKill])
-
-  const handleUpgrade = useCallback(async (e: React.MouseEvent) => {
-    e.stopPropagation()
-    setUpgrading(true)
-    try { await onUpgrade() } finally { setUpgrading(false) }
-  }, [onUpgrade])
 
   return (
     <div
@@ -77,23 +68,12 @@ export const SessionCard = memo(function SessionCard({
         <button
           className={`${styles.actionBtn} ${styles.killBtn} ${killing ? styles.loading : ''}`}
           onClick={handleKill}
-          disabled={killing || upgrading}
+          disabled={killing}
           title="Kill session"
         >
           {killing ? <Loader2 size={11} className={styles.spinner} /> : <Skull size={11} />}
           {killing ? 'Killing...' : 'Kill'}
         </button>
-        {!isMeterpreter && (
-          <button
-            className={`${styles.actionBtn} ${styles.upgradeBtn} ${upgrading ? styles.loading : ''}`}
-            onClick={handleUpgrade}
-            disabled={killing || upgrading}
-            title="Upgrade to meterpreter"
-          >
-            {upgrading ? <Loader2 size={11} className={styles.spinner} /> : <ArrowUpCircle size={11} />}
-            {upgrading ? 'Upgrading...' : 'Upgrade'}
-          </button>
-        )}
       </div>
     </div>
   )

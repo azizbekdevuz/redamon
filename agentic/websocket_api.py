@@ -418,19 +418,20 @@ class StreamingCallback:
         self._persist("question_request", question_request)
         logger.info(f"Question request sent to session {self.connection.session_id}")
 
-    async def on_response(self, answer: str, iteration_count: int, phase: str, task_complete: bool):
+    async def on_response(self, answer: str, iteration_count: int, phase: str, task_complete: bool, response_tier: str = "full_report"):
         """Called when agent provides final response"""
         if not self._response_sent:
             payload = {
                 "answer": answer,
                 "iteration_count": iteration_count,
                 "phase": phase,
-                "task_complete": task_complete
+                "task_complete": task_complete,
+                "response_tier": response_tier,
             }
             await self.connection.send_message(MessageType.RESPONSE, payload)
             self._response_sent = True
-            self._persist("assistant_message", {"content": answer, "phase": phase, "task_complete": task_complete})
-            logger.info(f"Response sent to session {self.connection.session_id}")
+            self._persist("assistant_message", {"content": answer, "phase": phase, "task_complete": task_complete, "response_tier": response_tier})
+            logger.info(f"Response sent to session {self.connection.session_id} (tier: {response_tier})")
         else:
             logger.debug(f"Duplicate response blocked for session {self.connection.session_id}")
 

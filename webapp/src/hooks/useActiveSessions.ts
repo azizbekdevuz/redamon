@@ -18,7 +18,6 @@ interface UseActiveSessionsReturn {
   totalCount: number
   interactWithSession: (sessionId: number, command: string) => Promise<SessionInteractResult>
   killSession: (sessionId: number) => Promise<void>
-  upgradeSession: (sessionId: number) => Promise<void>
   killJob: (jobId: number) => Promise<void>
   refetch: () => Promise<void>
 }
@@ -37,6 +36,9 @@ export function useActiveSessions({
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const pollingRef = useRef<NodeJS.Timeout | null>(null)
+  // Track killed sessions/jobs so polls don't re-add them
+  const killedSessionsRef = useRef<Set<number>>(new Set())
+  const killedJobsRef = useRef<Set<number>>(new Set())
 
   const fetchSessions = useCallback(async () => {
     try {
@@ -45,8 +47,18 @@ export function useActiveSessions({
         throw new Error(`HTTP ${resp.status}`)
       }
       const data = await resp.json()
-      setSessions(data.sessions || [])
-      setJobs(data.jobs || [])
+      const liveSessions: MsfSession[] = data.sessions || []
+      const liveJobs: MsfJob[] = data.jobs || []
+      // Clear killed IDs that are truly gone from the server
+      for (const sid of killedSessionsRef.current) {
+        if (!liveSessions.some(s => s.id === sid)) killedSessionsRef.current.delete(sid)
+      }
+      for (const jid of killedJobsRef.current) {
+        if (!liveJobs.some(j => j.id === jid)) killedJobsRef.current.delete(jid)
+      }
+      // Filter out sessions/jobs that are pending kill
+      setSessions(liveSessions.filter(s => !killedSessionsRef.current.has(s.id)))
+      setJobs(liveJobs.filter(j => !killedJobsRef.current.has(j.id)))
       setNonMsfSessions(data.non_msf_sessions || [])
       setAgentBusy(data.agent_busy || false)
       setError(null)
@@ -73,31 +85,26 @@ export function useActiveSessions({
   }, [])
 
   const killSession = useCallback(async (sessionId: number) => {
+    // Mark as killed immediately so polls don't re-add it
+    killedSessionsRef.current.add(sessionId)
+    setSessions(prev => prev.filter(s => s.id !== sessionId))
     try {
       await fetch(`/api/agent/sessions/${sessionId}/kill`, { method: 'POST' })
-      // Immediately remove from local state for snappy UX
-      setSessions(prev => prev.filter(s => s.id !== sessionId))
     } catch {
-      // Will be corrected on next poll
+      // Optimistic removal stays — will self-correct if session is still alive
+      killedSessionsRef.current.delete(sessionId)
     }
   }, [])
 
-  const upgradeSession = useCallback(async (sessionId: number) => {
-    try {
-      await fetch(`/api/agent/sessions/${sessionId}/upgrade`, { method: 'POST' })
-      // Refresh to pick up the new meterpreter session
-      await fetchSessions()
-    } catch {
-      // Will be corrected on next poll
-    }
-  }, [fetchSessions])
-
   const killJob = useCallback(async (jobId: number) => {
+    // Mark as killed immediately so polls don't re-add it
+    killedJobsRef.current.add(jobId)
+    setJobs(prev => prev.filter(j => j.id !== jobId))
     try {
       await fetch(`/api/agent/jobs/${jobId}/kill`, { method: 'POST' })
-      setJobs(prev => prev.filter(j => j.id !== jobId))
     } catch {
-      // Will be corrected on next poll
+      // Optimistic removal stays — will self-correct if job is still alive
+      killedJobsRef.current.delete(jobId)
     }
   }, [])
 
@@ -139,7 +146,6 @@ export function useActiveSessions({
     totalCount,
     interactWithSession,
     killSession,
-    upgradeSession,
     killJob,
     refetch: fetchSessions,
   }

@@ -16,7 +16,6 @@ interface ActiveSessionsProps {
   projectId: string
   onInteract: (sessionId: number, command: string) => Promise<SessionInteractResult>
   onKillSession: (sessionId: number) => Promise<void>
-  onUpgradeSession: (sessionId: number) => Promise<void>
   onKillJob: (jobId: number) => Promise<void>
 }
 
@@ -29,7 +28,6 @@ export const ActiveSessions = memo(function ActiveSessions({
   projectId,
   onInteract,
   onKillSession,
-  onUpgradeSession,
   onKillJob,
 }: ActiveSessionsProps) {
   const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null)
@@ -91,7 +89,6 @@ export const ActiveSessions = memo(function ActiveSessions({
                   isSelected={selectedSessionId === s.id}
                   onSelect={() => setSelectedSessionId(s.id)}
                   onKill={() => handleKill(s.id)}
-                  onUpgrade={() => onUpgradeSession(s.id)}
                 />
               ))}
             </>

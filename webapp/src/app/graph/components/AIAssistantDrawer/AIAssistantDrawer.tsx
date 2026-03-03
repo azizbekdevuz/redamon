@@ -9,7 +9,7 @@
 'use client'
 
 import React, { useState, useRef, useEffect, useCallback, KeyboardEvent } from 'react'
-import { Send, Bot, User, Loader2, AlertCircle, Sparkles, Plus, Shield, ShieldAlert, Target, Zap, HelpCircle, WifiOff, Wifi, Square, Play, Download, Wrench, History, ChevronDown, EyeOff, Eye, Mail } from 'lucide-react'
+import { Send, Bot, User, Loader2, AlertCircle, Sparkles, Plus, Shield, ShieldAlert, Target, Zap, HelpCircle, WifiOff, Wifi, Square, Play, Download, Wrench, History, ChevronDown, EyeOff, Eye, Mail, Copy, Check } from 'lucide-react'
 import { StealthIcon } from '@/components/icons/StealthIcon'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -37,6 +37,16 @@ import type { ThinkingItem, ToolExecutionItem } from './AgentTimeline'
 
 type Phase = 'informational' | 'exploitation' | 'post_exploitation'
 
+/** Recursively extract plain text from React children (for copy-to-clipboard). */
+function extractTextFromChildren(children: any): string {
+  if (children == null) return ''
+  if (typeof children === 'string') return children
+  if (typeof children === 'number') return String(children)
+  if (Array.isArray(children)) return children.map(extractTextFromChildren).join('')
+  if (children?.props?.children) return extractTextFromChildren(children.props.children)
+  return ''
+}
+
 interface Message {
   id: string
   role: 'user' | 'assistant'
@@ -48,6 +58,7 @@ interface Message {
   timestamp: Date
   isGuidance?: boolean
   isReport?: boolean
+  responseTier?: 'conversational' | 'summary' | 'full_report'
 }
 
 interface FileDownloadItem {
@@ -195,6 +206,8 @@ export function AIAssistantDrawer({
   const [selectedOptions, setSelectedOptions] = useState<string[]>([])
 
   const [todoList, setTodoList] = useState<TodoItem[]>([])
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
+  const [copiedFieldKey, setCopiedFieldKey] = useState<string | null>(null)
 
   // Conversation history state
   const [showHistory, setShowHistory] = useState(false)
@@ -438,14 +451,16 @@ export function AIAssistantDrawer({
         break
 
       case MessageType.RESPONSE:
-        // Add agent response message
+        // Add agent response message with tier-aware badge
+        const tier = message.payload.response_tier || (message.payload.task_complete ? 'full_report' : 'conversational')
         const assistantMessage: Message = {
           id: `assistant-${Date.now()}`,
           role: 'assistant',
           content: message.payload.answer,
           phase: message.payload.phase as Phase,
           timestamp: new Date(),
-          isReport: message.payload.task_complete === true,
+          isReport: tier === 'full_report',
+          responseTier: tier,
         }
         setChatItems(prev => [...prev, assistantMessage])
         setIsLoading(false)
@@ -727,7 +742,8 @@ export function AIAssistantDrawer({
           if (item.isGuidance) lines.push('> *[Guidance]*')
         } else {
           lines.push(`### Assistant  \`${time}\``)
-          if (item.isReport) lines.push('> **[Report]**')
+          if (item.responseTier === 'full_report') lines.push('> **[Report]**')
+          else if (item.responseTier === 'summary') lines.push('> **[Summary]**')
         }
         lines.push('')
         lines.push(item.content)
@@ -902,6 +918,7 @@ export function AIAssistantDrawer({
       }
 
       if (msg.type === 'user_message' || msg.type === 'assistant_message') {
+        const restoredTier = data.response_tier || (data.task_complete ? 'full_report' : undefined)
         return {
           id: msg.id,
           role: msg.type === 'user_message' ? 'user' : 'assistant',
@@ -909,7 +926,8 @@ export function AIAssistantDrawer({
           phase: data.phase,
           timestamp: new Date(msg.createdAt),
           isGuidance: data.isGuidance || false,
-          isReport: data.isReport || data.task_complete || false,
+          isReport: restoredTier === 'full_report' || (!data.response_tier && (data.isReport || data.task_complete || false)),
+          responseTier: restoredTier,
           error: data.error || null,
         } as Message
       } else if (msg.type === 'thinking') {
@@ -1109,6 +1127,20 @@ export function AIAssistantDrawer({
     groupedChatItems.push({ type: 'timeline', content: currentTimelineGroup })
   }
 
+  const handleCopyMessage = useCallback((messageId: string, content: string) => {
+    navigator.clipboard.writeText(content).then(() => {
+      setCopiedMessageId(messageId)
+      setTimeout(() => setCopiedMessageId(null), 2000)
+    })
+  }, [])
+
+  const handleCopyField = useCallback((key: string, text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedFieldKey(key)
+      setTimeout(() => setCopiedFieldKey(null), 2000)
+    })
+  }, [])
+
   const renderMessage = (item: Message) => {
     return (
       <div
@@ -1124,14 +1156,19 @@ export function AIAssistantDrawer({
           {item.isGuidance && (
             <span className={styles.guidanceBadge}>Guidance</span>
           )}
-          {item.isReport && (
+          {item.responseTier === 'full_report' && (
             <div className={styles.reportHeader}>
               <span className={styles.reportBadge}>Report</span>
             </div>
           )}
+          {item.responseTier === 'summary' && (
+            <div className={styles.reportHeader}>
+              <span className={styles.summaryBadge}>Summary</span>
+            </div>
+          )}
           <div
             className={styles.messageText}
-            {...(item.isReport ? { 'data-report-content': true } : {})}
+            {...(item.responseTier === 'full_report' || item.responseTier === 'summary' ? { 'data-report-content': true } : {})}
           >
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
@@ -1140,26 +1177,76 @@ export function AIAssistantDrawer({
                   const match = /language-(\w+)/.exec(className || '')
                   const language = match ? match[1] : ''
                   const isInline = !className
+                  const codeText = String(children).replace(/\n$/, '')
 
-                  return !isInline && language ? (
-                    <SyntaxHighlighter
-                      style={vscDarkPlus as any}
-                      language={language}
-                      PreTag="div"
-                    >
-                      {String(children).replace(/\n$/, '')}
-                    </SyntaxHighlighter>
-                  ) : (
+                  if (!isInline) {
+                    const codeKey = `code-${item.id}-${codeText.slice(0, 20)}`
+                    return (
+                      <div className={styles.codeBlockWrapper}>
+                        <button
+                          className={`${styles.codeBlockCopyButton} ${copiedFieldKey === codeKey ? styles.codeBlockCopyButtonCopied : ''}`}
+                          onClick={() => handleCopyField(codeKey, codeText)}
+                          title="Copy code"
+                        >
+                          {copiedFieldKey === codeKey ? <Check size={11} /> : <Copy size={11} />}
+                        </button>
+                        {language ? (
+                          <SyntaxHighlighter
+                            style={vscDarkPlus as any}
+                            language={language}
+                            PreTag="div"
+                          >
+                            {codeText}
+                          </SyntaxHighlighter>
+                        ) : (
+                          <pre><code className={className} {...props}>{children}</code></pre>
+                        )}
+                      </div>
+                    )
+                  }
+
+                  return (
                     <code className={className} {...props}>
                       {children}
                     </code>
                   )
-                }
+                },
+                td({ children, ...props }: any) {
+                  const text = extractTextFromChildren(children)
+                  if (!text || text.length < 3) {
+                    return <td {...props}>{children}</td>
+                  }
+                  const cellKey = `td-${item.id}-${text.slice(0, 30)}`
+                  return (
+                    <td {...props}>
+                      <span className={styles.tableCellContent}>
+                        {children}
+                        <button
+                          className={`${styles.tableCellCopyButton} ${copiedFieldKey === cellKey ? styles.tableCellCopyButtonCopied : ''}`}
+                          onClick={() => handleCopyField(cellKey, text)}
+                          title="Copy value"
+                        >
+                          {copiedFieldKey === cellKey ? <Check size={10} /> : <Copy size={10} />}
+                        </button>
+                      </span>
+                    </td>
+                  )
+                },
               }}
             >
               {item.content}
             </ReactMarkdown>
           </div>
+
+          {item.role === 'assistant' && !item.isGuidance && (
+            <button
+              className={`${styles.copyButton} ${copiedMessageId === item.id ? styles.copyButtonCopied : ''}`}
+              onClick={() => handleCopyMessage(item.id, item.content)}
+              title="Copy to clipboard"
+            >
+              {copiedMessageId === item.id ? <><Check size={12} /> Copied</> : <><Copy size={12} /> Copy</>}
+            </button>
+          )}
 
           {item.error && (
             <div className={styles.errorBadge}>
@@ -1453,50 +1540,124 @@ export function AIAssistantDrawer({
                 </button>
                 {openTemplateGroup === 'social_engineering' && (
                   <div className={styles.templateGroupItems}>
-                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a Windows reverse shell executable with msfvenom and set up the handler to catch the callback')} disabled={!isConnected}>
-                      Generate a Windows reverse shell payload
+                    {/* ── Windows ── */}
+                    <span className={styles.templateOsLabel}>Windows</span>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a Windows Meterpreter EXE payload and set up the handler to catch the callback when the victim runs it')} disabled={!isConnected}>
+                      Meterpreter EXE (reverse_tcp)
                     </button>
-                    <button className={styles.suggestion} onClick={() => setInputValue('Create a malicious Word document with a VBA macro that opens a Meterpreter session when the target enables macros')} disabled={!isConnected}>
-                      Create a malicious Word macro document
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a Windows reverse_https Meterpreter EXE payload for encrypted callback that bypasses the victim firewall')} disabled={!isConnected}>
+                      Meterpreter EXE (reverse_https)
                     </button>
-                    <button className={styles.suggestion} onClick={() => setInputValue('Create a weaponized Excel spreadsheet with a macro payload that establishes a reverse shell connection')} disabled={!isConnected}>
-                      Create a malicious Excel macro spreadsheet
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a Windows reverse shell EXE encoded with shikata_ga_nai (5 iterations) for AV evasion on the victim machine and set up the handler')} disabled={!isConnected}>
+                      Encoded EXE (shikata_ga_nai AV evasion)
                     </button>
-                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a trojanized PDF file that executes a reverse shell when opened in Adobe Reader')} disabled={!isConnected}>
-                      Generate a malicious PDF document
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a fileless PowerShell (psh-reflection) Meterpreter payload that runs entirely in memory when the victim executes it')} disabled={!isConnected}>
+                      Fileless PowerShell (psh-reflection)
                     </button>
-                    <button className={styles.suggestion} onClick={() => setInputValue('Set up a web delivery attack with a PowerShell one-liner that the target can paste to get a Meterpreter session')} disabled={!isConnected}>
-                      Set up a PowerShell web delivery attack
+                    <button className={styles.suggestion} onClick={() => setInputValue('Create a malicious Word document with a VBA macro that opens a Meterpreter session when the victim enables macros')} disabled={!isConnected}>
+                      Malicious Word macro document (VBA)
                     </button>
-                    <button className={styles.suggestion} onClick={() => setInputValue('Create an HTA delivery server that serves a payload when the target visits the URL in their browser')} disabled={!isConnected}>
-                      Create an HTA delivery server
+                    <button className={styles.suggestion} onClick={() => setInputValue('Create a weaponized Excel spreadsheet with a macro payload that establishes a reverse shell when the victim opens it')} disabled={!isConnected}>
+                      Malicious Excel macro spreadsheet (VBA)
                     </button>
-                    <button className={styles.suggestion} onClick={() => setInputValue('Generate an Android APK backdoor that opens a Meterpreter session when installed on the target device')} disabled={!isConnected}>
-                      Generate an Android APK backdoor
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a trojanized PDF file that executes a reverse shell when the victim opens it in Adobe Reader')} disabled={!isConnected}>
+                      Malicious PDF document
                     </button>
-                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a Linux ELF reverse shell payload and set up the handler for a callback from the target machine')} disabled={!isConnected}>
-                      Generate a Linux ELF reverse shell
+                    <button className={styles.suggestion} onClick={() => setInputValue('Create a malicious RTF document exploiting CVE-2017-0199 that fetches an HTA payload when the victim opens it')} disabled={!isConnected}>
+                      Malicious RTF document (CVE-2017-0199)
                     </button>
-                    <button className={styles.suggestion} onClick={() => setInputValue('Create a Python-based web delivery attack that works cross-platform on Windows, Linux, and macOS targets')} disabled={!isConnected}>
-                      Set up a cross-platform Python web delivery
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a malicious Windows shortcut (LNK file) that executes a reverse shell payload when the victim clicks it')} disabled={!isConnected}>
+                      Malicious LNK shortcut file
                     </button>
-                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a phishing payload for Windows, encode it with shikata_ga_nai for AV evasion, and set up the handler')} disabled={!isConnected}>
-                      Generate an AV-evasive encoded payload
+                    <button className={styles.suggestion} onClick={() => setInputValue('Set up a PowerShell web delivery attack and generate a one-liner for the victim to execute to get a Meterpreter session')} disabled={!isConnected}>
+                      PowerShell web delivery attack
                     </button>
-                    <button className={styles.suggestion} onClick={() => setInputValue('Create a malicious RTF document exploiting CVE-2017-0199 that fetches an HTA payload when the target opens it')} disabled={!isConnected}>
-                      Create a malicious RTF document
+                    <button className={styles.suggestion} onClick={() => setInputValue('Create an HTA delivery server that serves a payload when the victim visits the URL in their browser')} disabled={!isConnected}>
+                      HTA delivery server
                     </button>
-                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a malicious Windows shortcut (LNK file) that executes a reverse shell payload when the target clicks it')} disabled={!isConnected}>
-                      Create a malicious LNK shortcut file
+                    <button className={styles.suggestion} onClick={() => setInputValue('Set up a Regsvr32 web delivery attack to bypass AppLocker restrictions when the victim executes the one-liner')} disabled={!isConnected}>
+                      Regsvr32 AppLocker bypass
                     </button>
-                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a Java WAR backdoor for deployment on a Tomcat or JBoss server and set up the Meterpreter handler')} disabled={!isConnected}>
-                      Generate a Java WAR backdoor for Tomcat
+
+                    {/* ── Linux ── */}
+                    <span className={styles.templateOsLabel}>Linux</span>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a Linux x64 Meterpreter ELF binary payload and set up the handler to catch the callback when the victim runs it')} disabled={!isConnected}>
+                      Meterpreter ELF binary (reverse_tcp)
                     </button>
-                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a phishing payload and send it via email to target@example.com with a convincing IT support pretext')} disabled={!isConnected}>
-                      Generate payload and send phishing email
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a Linux x64 basic shell ELF binary (linux/x64/shell_reverse_tcp) as a fallback payload for the victim to execute')} disabled={!isConnected}>
+                      Shell ELF binary (fallback)
                     </button>
-                    <button className={styles.suggestion} onClick={() => setInputValue('Set up a Regsvr32 web delivery attack to bypass AppLocker restrictions on the target Windows machine')} disabled={!isConnected}>
-                      Regsvr32 web delivery to bypass AppLocker
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a bash reverse shell one-liner (cmd/unix/reverse_bash) for a Linux victim to execute and set up the handler')} disabled={!isConnected}>
+                      Bash reverse shell one-liner
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a Python reverse shell one-liner (cmd/unix/reverse_python) for a Linux victim with Python installed and set up the handler')} disabled={!isConnected}>
+                      Python reverse shell one-liner
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Set up a Python web delivery attack (exploit/multi/script/web_delivery TARGET 0) and generate a one-liner for a Linux victim to execute')} disabled={!isConnected}>
+                      Python web delivery (one-liner)
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a Linux ELF reverse shell payload encoded with x64/xor for AV evasion on the victim machine and set up the handler')} disabled={!isConnected}>
+                      Encoded ELF (x64/xor AV evasion)
+                    </button>
+
+                    {/* ── macOS ── */}
+                    <span className={styles.templateOsLabel}>macOS</span>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a macOS Mach-O Meterpreter reverse_tcp payload and set up the handler to catch the callback when the victim runs it')} disabled={!isConnected}>
+                      Meterpreter Mach-O binary (reverse_tcp)
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a macOS Python reverse shell one-liner (cmd/unix/reverse_python) for the victim to execute bypassing Gatekeeper')} disabled={!isConnected}>
+                      Python reverse shell (Gatekeeper bypass)
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a macOS bash reverse shell one-liner (cmd/unix/reverse_bash) for a macOS victim to execute and set up the handler')} disabled={!isConnected}>
+                      Bash reverse shell one-liner
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Set up a Python web delivery attack (exploit/multi/script/web_delivery TARGET 0) and generate a one-liner for a macOS victim to execute')} disabled={!isConnected}>
+                      Python web delivery (one-liner)
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a macOS Mach-O Meterpreter payload encoded with x64/xor for AV evasion on the victim machine and set up the handler')} disabled={!isConnected}>
+                      Encoded Mach-O (x64/xor AV evasion)
+                    </button>
+
+                    {/* ── Android ── */}
+                    <span className={styles.templateOsLabel}>Android</span>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate an Android APK backdoor with android/meterpreter/reverse_tcp that opens a Meterpreter session when the victim installs it')} disabled={!isConnected}>
+                      Meterpreter APK backdoor
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate an Android APK payload and embed it into a legitimate APK using msfvenom -x to trojanize an app the victim will install')} disabled={!isConnected}>
+                      Trojanized APK (injected into legit app)
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate an Android reverse_https APK payload for encrypted callback that bypasses network inspection on the victim device')} disabled={!isConnected}>
+                      APK with reverse_https (encrypted)
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate an Android APK payload encoded with x86/shikata_ga_nai for AV evasion on the victim device and set up the handler')} disabled={!isConnected}>
+                      Encoded APK (shikata_ga_nai AV evasion)
+                    </button>
+
+                    {/* ── Cross-Platform / Java / PHP ── */}
+                    <span className={styles.templateOsLabel}>Cross-Platform / Java / PHP</span>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a cross-platform Python Meterpreter payload (python/meterpreter/reverse_tcp) for a victim running Windows, Linux, or macOS')} disabled={!isConnected}>
+                      Python Meterpreter (cross-platform)
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a Java WAR backdoor for the victim to deploy on a Tomcat or JBoss server and set up the Meterpreter handler')} disabled={!isConnected}>
+                      Java WAR backdoor (Tomcat / JBoss)
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Set up a PHP web delivery attack (exploit/multi/script/web_delivery TARGET 1) and generate a one-liner for a victim web server running PHP')} disabled={!isConnected}>
+                      PHP web delivery (web servers)
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Set up a pubprn web delivery attack (exploit/multi/script/web_delivery TARGET 4) and generate a one-liner for the victim to bypass script restrictions')} disabled={!isConnected}>
+                      pubprn script bypass (web delivery)
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Set up a SyncAppvPublishingServer web delivery attack (exploit/multi/script/web_delivery TARGET 5) for the victim to bypass Windows restrictions')} disabled={!isConnected}>
+                      SyncAppvPublishing bypass (web delivery)
+                    </button>
+
+                    {/* ── Email Delivery ── */}
+                    <span className={styles.templateOsLabel}>Email Delivery</span>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a phishing payload and send it via email to the victim at target@example.com with a convincing IT support pretext')} disabled={!isConnected}>
+                      Send payload via phishing email
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a malicious Office document and send it via email to the victim at target@example.com disguised as an invoice attachment')} disabled={!isConnected}>
+                      Send malicious document via email
                     </button>
                   </div>
                 )}

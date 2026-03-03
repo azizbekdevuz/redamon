@@ -159,6 +159,7 @@ export interface ResponsePayload {
   iteration_count: number
   phase: string
   task_complete: boolean
+  response_tier?: 'conversational' | 'summary' | 'full_report'
 }
 
 export interface ExecutionStepPayload {

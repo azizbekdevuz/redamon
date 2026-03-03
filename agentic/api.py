@@ -377,18 +377,6 @@ async def kill_session(session_id: int):
         return JSONResponse(content={"error": str(e)}, status_code=502)
 
 
-@app.post("/sessions/{session_id}/upgrade", tags=["Sessions"])
-async def upgrade_session(session_id: int):
-    """Upgrade a shell session to meterpreter."""
-    try:
-        async with httpx.AsyncClient(timeout=40.0) as client:
-            resp = await client.post(f"{_SESSION_BASE}/sessions/{session_id}/upgrade")
-            return JSONResponse(content=resp.json(), status_code=resp.status_code)
-    except Exception as e:
-        logger.error(f"Session upgrade proxy error: {e}")
-        return JSONResponse(content={"error": str(e)}, status_code=502)
-
-
 @app.post("/jobs/{job_id}/kill", tags=["Sessions"])
 async def kill_job(job_id: int):
     """Kill a background Metasploit job."""

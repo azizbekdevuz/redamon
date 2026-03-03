@@ -681,7 +681,6 @@ export default function GraphPage() {
               projectId={projectId || ''}
               onInteract={activeSessions.interactWithSession}
               onKillSession={activeSessions.killSession}
-              onUpgradeSession={activeSessions.upgradeSession}
               onKillJob={activeSessions.killJob}
             />
           )}
