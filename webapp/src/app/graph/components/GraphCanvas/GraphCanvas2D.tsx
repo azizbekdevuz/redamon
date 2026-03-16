@@ -276,6 +276,21 @@ export function GraphCanvas2D({
           ctx.strokeStyle = effectiveColor
           ctx.lineWidth = 1.5
           ctx.stroke()
+        } else if (graphNode.type === 'ExternalDomain') {
+          // Dashed circle — visually marks "out of scope"
+          ctx.beginPath()
+          ctx.arc(graphNode.x, graphNode.y, nodeSize, 0, 2 * Math.PI)
+          ctx.save()
+          ctx.globalAlpha = 0.15
+          ctx.fillStyle = color
+          ctx.fill()
+          ctx.globalAlpha = 1
+          ctx.setLineDash([3, 3])
+          ctx.strokeStyle = color
+          ctx.lineWidth = 1.5
+          ctx.stroke()
+          ctx.setLineDash([])
+          ctx.restore()
         } else {
           // Standard circle for all other nodes
           ctx.beginPath()

@@ -301,12 +301,15 @@ DEFAULT_SETTINGS: dict[str, Any] = {
 
     # URLScan.io Passive Enrichment
     'URLSCAN_ENABLED': True,
-    'URLSCAN_MAX_RESULTS': 1000,
+    'URLSCAN_MAX_RESULTS': 5000,
 
     # Subdomain Discovery Tool Toggles
     'CRTSH_ENABLED': True,
+    'CRTSH_MAX_RESULTS': 5000,
     'HACKER_TARGET_ENABLED': True,
+    'HACKER_TARGET_MAX_RESULTS': 5000,
     'KNOCKPY_RECON_ENABLED': True,
+    'KNOCKPY_RECON_MAX_RESULTS': 5000,
 
     # Rules of Engagement (recon-relevant fields only)
     'ROE_ENABLED': False,
@@ -589,8 +592,11 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
 
     # Subdomain Discovery Tool Toggles
     settings['CRTSH_ENABLED'] = project.get('crtshEnabled', DEFAULT_SETTINGS['CRTSH_ENABLED'])
+    settings['CRTSH_MAX_RESULTS'] = project.get('crtshMaxResults', DEFAULT_SETTINGS['CRTSH_MAX_RESULTS'])
     settings['HACKERTARGET_ENABLED'] = project.get('hackerTargetEnabled', DEFAULT_SETTINGS['HACKER_TARGET_ENABLED'])
+    settings['HACKERTARGET_MAX_RESULTS'] = project.get('hackerTargetMaxResults', DEFAULT_SETTINGS['HACKER_TARGET_MAX_RESULTS'])
     settings['KNOCKPY_RECON_ENABLED'] = project.get('knockpyReconEnabled', DEFAULT_SETTINGS['KNOCKPY_RECON_ENABLED'])
+    settings['KNOCKPY_RECON_MAX_RESULTS'] = project.get('knockpyReconMaxResults', DEFAULT_SETTINGS['KNOCKPY_RECON_MAX_RESULTS'])
 
     # Fetch Shodan API key from user's global settings
     shodan_any = any([
@@ -763,8 +769,11 @@ def apply_stealth_overrides(settings: dict[str, Any]) -> dict[str, Any]:
     # --- Subdomain Brute Force: DISABLED ---
     settings['USE_BRUTEFORCE_FOR_SUBDOMAINS'] = False
 
-    # --- URLScan: keep enabled (passive) but reduce results ---
-    settings['URLSCAN_MAX_RESULTS'] = min(settings.get('URLSCAN_MAX_RESULTS', 1000), 100)
+    # --- Passive sources: keep enabled but reduce results ---
+    settings['URLSCAN_MAX_RESULTS'] = min(settings.get('URLSCAN_MAX_RESULTS', 5000), 100)
+    settings['CRTSH_MAX_RESULTS'] = min(settings.get('CRTSH_MAX_RESULTS', 5000), 100)
+    settings['HACKERTARGET_MAX_RESULTS'] = min(settings.get('HACKERTARGET_MAX_RESULTS', 5000), 100)
+    settings['KNOCKPY_RECON_MAX_RESULTS'] = min(settings.get('KNOCKPY_RECON_MAX_RESULTS', 5000), 100)
 
     # --- Security Checks: disable active checks, keep passive ones ---
     # Active checks (make network connections to target)

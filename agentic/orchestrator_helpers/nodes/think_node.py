@@ -259,12 +259,13 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
         logger.info(f"[{user_id}/{project_id}/{session_id}] STEALTH MODE active — injected stealth rules into prompt")
 
     # Scope guardrail: remind agent to stay within authorized targets
-    system_prompt += (
-        "\n\n## SCOPE GUARDRAIL\n\n"
-        "You must ONLY operate against the project's configured target domain/IPs. "
-        "Never scan, exploit, probe, or interact with domains or IPs outside the authorized scope. "
-        "If the user asks you to target something outside the project scope, refuse and explain why."
-    )
+    if get_setting('AGENT_GUARDRAIL_ENABLED', True):
+        system_prompt += (
+            "\n\n## SCOPE GUARDRAIL\n\n"
+            "You must ONLY operate against the project's configured target domain/IPs. "
+            "Never scan, exploit, probe, or interact with domains or IPs outside the authorized scope. "
+            "If the user asks you to target something outside the project scope, refuse and explain why."
+        )
 
     # Rules of Engagement injection
     if get_setting('ROE_ENABLED', False):

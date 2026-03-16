@@ -5,6 +5,8 @@ import { ChevronDown, Globe } from 'lucide-react'
 import { Toggle } from '@/components/ui'
 import type { Project } from '@prisma/client'
 import styles from '../ProjectForm.module.css'
+import { NodeInfoTooltip } from '../NodeInfoTooltip'
+import { SECTION_NODE_MAP } from '../nodeMapping'
 import { TimeEstimate } from '../TimeEstimate'
 
 type FormData = Omit<Project, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'user'>
@@ -23,6 +25,7 @@ export function HttpxSection({ data, updateField }: HttpxSectionProps) {
         <h2 className={styles.sectionTitle}>
           <Globe size={16} />
           httpx HTTP Probing
+          <NodeInfoTooltip nodes={SECTION_NODE_MAP.Httpx} />
           <span className={styles.badgeActive}>Active</span>
         </h2>
         <ChevronDown

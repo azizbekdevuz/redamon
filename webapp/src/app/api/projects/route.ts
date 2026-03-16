@@ -101,28 +101,31 @@ export async function POST(request: NextRequest) {
     }
 
     // Target guardrail: check if domain/IPs are allowed before creating
-    try {
-      const guardrailResponse = await fetch(`${AGENT_API_URL}/guardrail/check-target`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          target_domain: ipMode ? '' : (targetDomain || ''),
-          target_ips: ipMode ? (optionalParams.targetIps || []) : [],
-        }),
-      })
+    if (optionalParams.targetGuardrailEnabled !== false) {
+      try {
+        const guardrailResponse = await fetch(`${AGENT_API_URL}/guardrail/check-target`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            target_domain: ipMode ? '' : (targetDomain || ''),
+            target_ips: ipMode ? (optionalParams.targetIps || []) : [],
+            user_id: userId,
+          }),
+        })
 
-      if (guardrailResponse.ok) {
-        const guardrailResult = await guardrailResponse.json()
-        if (guardrailResult.allowed === false) {
-          return NextResponse.json(
-            { error: `Target blocked by guardrail: ${guardrailResult.reason}` },
-            { status: 403 }
-          )
+        if (guardrailResponse.ok) {
+          const guardrailResult = await guardrailResponse.json()
+          if (guardrailResult.allowed === false) {
+            return NextResponse.json(
+              { error: `Target blocked by guardrail: ${guardrailResult.reason}` },
+              { status: 403 }
+            )
+          }
         }
+        // If guardrail is unreachable or returns non-OK, fail open (allow)
+      } catch (guardrailError) {
+        console.warn('Guardrail check failed, proceeding with project creation:', guardrailError)
       }
-      // If guardrail is unreachable or returns non-OK, fail open (allow)
-    } catch (guardrailError) {
-      console.warn('Guardrail check failed, proceeding with project creation:', guardrailError)
     }
 
     // Attach RoE document binary if uploaded

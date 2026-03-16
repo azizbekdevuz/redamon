@@ -216,6 +216,11 @@ sequenceDiagram
     Recon->>Recon: crt.sh + HackerTarget API
     Recon->>Recon: DNS resolution
 
+    Note over Recon: Phase 1b: OSINT Enrichment (Python native)
+    Recon->>Recon: Shodan enrichment (if enabled)
+    Recon->>Recon: URLScan.io enrichment (if enabled)
+    Recon->>Recon: External domain aggregation
+
     Note over Recon,Naabu: Phase 2: Port Scan
     Recon->>Docker: docker run projectdiscovery/naabu
     Docker->>Naabu: Start container
@@ -287,6 +292,7 @@ flowchart LR
 
     subgraph Pipeline["🔄 Recon Pipeline"]
         DD[1️⃣ domain_discovery<br/>WHOIS + Subdomains + DNS]
+        OSINT[1b️ osint_enrichment<br/>Shodan + URLScan]
         PS[2️⃣ port_scan<br/>Naabu]
         HP[3️⃣ http_probe<br/>Httpx + Wappalyzer]
         RE[4️⃣ resource_enum<br/>Katana + GAU]
@@ -300,7 +306,8 @@ flowchart LR
     end
 
     Domain --> DD
-    DD --> PS
+    DD --> OSINT
+    OSINT --> PS
     PS --> HP
     HP --> RE
     RE --> VS
@@ -336,9 +343,18 @@ flowchart TB
         DNS --> Out1[(Subdomains + IPs)]
     end
 
+    subgraph Phase1b["Phase 1b: OSINT Enrichment"]
+        direction TB
+        Out1 --> ShodanE[Shodan Enrichment<br/>Host, DNS, CVEs]
+        Out1 --> URLScanE[URLScan.io Enrichment<br/>Historical scans]
+        ShodanE --> ExtAgg[Aggregate External Domains]
+        URLScanE --> ExtAgg
+        ExtAgg --> Out1b[(Enriched IPs + ExternalDomains)]
+    end
+
     subgraph Phase2["Phase 2: Port Scanning"]
         direction TB
-        Out1 --> Naabu[Naabu Port Scanner]
+        Out1b --> Naabu[Naabu Port Scanner]
 
         subgraph NaabuOpts["Scan Options"]
             SYN[SYN Scan<br/>Fast, requires root]
@@ -851,13 +867,21 @@ flowchart TB
         Nuclei[Nuclei<br/>Vuln scan]
     end
 
+    subgraph Layer1b["OSINT Enrichment"]
+        Shodan2[Shodan<br/>Host/DNS/CVEs]
+        URLScan[URLScan<br/>Historical scans]
+    end
+
     subgraph Layer4["Data Enrichment"]
         MITRE[MITRE<br/>CWE/CAPEC]
         GVM[GVM<br/>Deep scan]
     end
 
     WHOIS --> DNS
-    DNS --> Naabu
+    DNS --> Shodan2
+    DNS --> URLScan
+    Shodan2 --> Naabu
+    URLScan --> Naabu
     Naabu --> Httpx
     Httpx --> Katana
     Httpx --> GAU
@@ -871,18 +895,20 @@ flowchart TB
 
 ### Feature Comparison
 
-| Feature | WHOIS | DNS | Naabu | httpx | Katana | GAU | Kiterunner | Nuclei | GVM |
-|---------|-------|-----|-------|-------|--------|-----|------------|--------|-----|
-| **Domain Info** | ✅ | ⚠️ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **IP Resolution** | ❌ | ✅ | ⚠️ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Port Scanning** | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
-| **Live URL Check** | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Tech Detection** | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ⚠️ | ⚠️ |
-| **Endpoint Discovery** | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ |
-| **Historical URLs** | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
-| **API Discovery** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
-| **CVE Detection** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ |
-| **XSS/SQLi Testing** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ⚠️ |
+| Feature | WHOIS | DNS | Shodan | URLScan | Naabu | httpx | Katana | GAU | Kiterunner | Nuclei | GVM |
+|---------|-------|-----|--------|---------|-------|-------|--------|-----|------------|--------|-----|
+| **Domain Info** | ✅ | ⚠️ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **IP Resolution** | ❌ | ✅ | ⚠️ | ⚠️ | ⚠️ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Subdomain Discovery** | ❌ | ❌ | ⚠️ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Port Scanning** | ❌ | ❌ | ⚠️ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| **Live URL Check** | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Tech Detection** | ❌ | ❌ | ⚠️ | ⚠️ | ❌ | ✅ | ❌ | ❌ | ❌ | ⚠️ | ⚠️ |
+| **Endpoint Discovery** | ❌ | ❌ | ❌ | ⚠️ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **Historical URLs** | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| **API Discovery** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
+| **CVE Detection** | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ |
+| **External Domains** | ❌ | ❌ | ❌ | ✅ | ❌ | ⚠️ | ⚠️ | ⚠️ | ❌ | ❌ | ❌ |
+| **XSS/SQLi Testing** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ⚠️ |
 
 **Legend:** ✅ Primary | ⚠️ Limited | ❌ Not supported
 
@@ -892,6 +918,8 @@ flowchart TB
 |------|------------------|-------|
 | WHOIS | <1 second | Instant |
 | DNS | <1 second | Instant |
+| Shodan | 5-15 seconds | Passive, per-IP queries |
+| URLScan | 5-20 seconds | Passive, API rate-limited |
 | Naabu | 5-10 seconds | 1000 ports |
 | httpx | 10-30 seconds | All options |
 | Katana | 1-5 minutes | Crawl depth 3 |
@@ -961,6 +989,7 @@ recon/
 ├── main.py                 # 🚀 Entry point
 ├── domain_recon.py         # Subdomain discovery
 ├── whois_recon.py          # WHOIS lookup
+├── urlscan_enrich.py       # URLScan.io OSINT enrichment
 ├── port_scan.py            # Port scanning
 ├── http_probe.py           # HTTP probing
 ├── resource_enum.py        # Endpoint discovery

@@ -71,6 +71,7 @@ def run_katana_crawler(
 
     discovered_urls = set()
     filtered_out_of_scope = 0
+    external_domain_entries = []  # Collect out-of-scope domains for situational awareness
 
     for base_url in target_urls:
         if not base_url.startswith(('http://', 'https://')):
@@ -164,6 +165,9 @@ def run_katana_crawler(
                         host = parsed.hostname or ''
                         if host and allowed_hosts and host not in allowed_hosts:
                             filtered_out_of_scope += 1
+                            external_domain_entries.append({
+                                "domain": host, "source": "katana", "url": url,
+                            })
                             continue
                     except Exception:
                         continue
@@ -205,7 +209,7 @@ def run_katana_crawler(
     if filtered_out_of_scope > 0:
         print(f"    [+] Filtered {filtered_out_of_scope} out-of-scope URLs")
 
-    return urls_list, {}
+    return urls_list, {"external_domains": external_domain_entries}
 
 
 def fetch_forms_from_urls(

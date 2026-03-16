@@ -97,6 +97,7 @@ model Project {
   ownershipToken              String   @default("your-secret-token-here") @map("ownership_token")
   ownershipTxtPrefix          String   @default("_redamon-verify") @map("ownership_txt_prefix")
   stealthMode                 Boolean  @default(false) @map("stealth_mode")
+  targetGuardrailEnabled      Boolean  @default(true) @map("target_guardrail_enabled")
 
   // ========== SCAN MODULES ==========
   scanModules                 String[] @default(["domain_discovery", "port_scan", "http_probe", "resource_enum", "vuln_scan"]) @map("scan_modules")
@@ -343,6 +344,7 @@ model Project {
   agentKaliInstallForbiddenPackages     String   @default("") @map("agent_kali_install_forbidden_packages")
   agentBruteForceMaxWordlistAttempts    Int      @default(3) @map("agent_brute_force_max_wordlist_attempts")
   agentBruteforceSpeed                  Int      @default(5) @map("agent_bruteforce_speed")
+  agentGuardrailEnabled                 Boolean  @default(true) @map("agent_guardrail_enabled")
 
   // Hydra Brute Force Settings
   hydraEnabled                          Boolean  @default(true) @map("hydra_enabled")
@@ -365,12 +367,15 @@ model Project {
 
   // URLScan.io Passive Enrichment
   urlscanEnabled                        Boolean  @default(true)  @map("urlscan_enabled")
-  urlscanMaxResults                     Int      @default(1000)  @map("urlscan_max_results")
+  urlscanMaxResults                     Int      @default(5000)  @map("urlscan_max_results")
 
   // Subdomain Discovery Tool Toggles
   crtshEnabled                          Boolean  @default(true)  @map("crtsh_enabled")
+  crtshMaxResults                       Int      @default(5000)  @map("crtsh_max_results")
   hackerTargetEnabled                   Boolean  @default(true)  @map("hacker_target_enabled")
+  hackerTargetMaxResults                Int      @default(5000)  @map("hacker_target_max_results")
   knockpyReconEnabled                   Boolean  @default(true)  @map("knockpy_recon_enabled")
+  knockpyReconMaxResults                Int      @default(5000)  @map("knockpy_recon_max_results")
 
   // ========== PHISHING / SOCIAL ENGINEERING SETTINGS ==========
   phishingSmtpConfig                    String   @default("") @map("phishing_smtp_config")

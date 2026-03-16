@@ -279,6 +279,7 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
 
     # Initialize results
     katana_urls = []
+    katana_meta = {}
     gau_urls = []
     gau_urls_by_domain = {}
     kr_results = []
@@ -336,7 +337,7 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
         for name, future in futures.items():
             try:
                 if name == 'katana':
-                    katana_urls, _ = future.result(timeout=KATANA_TIMEOUT + 120)
+                    katana_urls, katana_meta = future.result(timeout=KATANA_TIMEOUT + 120)
                     print(f"\n[+] Katana completed: {len(katana_urls)} URLs")
                 elif name == 'gau':
                     gau_urls, gau_urls_by_domain = future.result(timeout=GAU_TIMEOUT * len(GAU_PROVIDERS) + 180)
@@ -402,6 +403,8 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
     }
     gau_urls_to_process = []  # Initialize empty, will be populated if GAU enabled
 
+    gau_external_domains = []  # Collect out-of-scope domains for situational awareness
+
     if GAU_ENABLED and gau_urls:
         # Filter GAU URLs to only include target domains (in-scope)
         in_scope_gau_urls = []
@@ -413,6 +416,8 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
                 in_scope_gau_urls.append(url)
             else:
                 out_of_scope_count += 1
+                if host:
+                    gau_external_domains.append({"domain": host, "source": "gau", "url": url})
 
         if out_of_scope_count > 0:
             print(f"\n[*] Filtered {out_of_scope_count} GAU URLs (out of scan scope)")
@@ -611,7 +616,8 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
             'kiterunner_with_multiple_methods': kr_stats.get('kr_with_multiple_methods', 0),
             'methods': {},
             'categories': {}
-        }
+        },
+        'external_domains': gau_external_domains + katana_meta.get("external_domains", []),
     }
 
     # Aggregate methods and categories across all base URLs

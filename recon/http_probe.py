@@ -732,6 +732,7 @@ def parse_httpx_output(output_file: str, root_domain: str = None, allowed_hosts:
     servers_found = {}
     status_codes = {}
     filtered_count = 0  # Track URLs filtered out due to domain/host mismatch
+    external_domain_entries = []  # Collect out-of-scope domains for situational awareness
 
     if not Path(output_file).exists():
         return {
@@ -768,6 +769,17 @@ def parse_httpx_output(output_file: str, root_domain: str = None, allowed_hosts:
                 input_host = extract_host_from_url(input_url) if input_url else ""
                 if not input_host or not is_host_in_scope(input_host, root_domain, allowed_hosts):
                     filtered_count += 1
+                    # Collect external domain data for situational awareness
+                    if host:
+                        external_domain_entries.append({
+                            "domain": host,
+                            "source": "http_probe_redirect",
+                            "url": url,
+                            "redirect_from_url": input_url,
+                            "status_code": entry.get("status_code") or entry.get("status-code"),
+                            "title": entry.get("title"),
+                            "server": entry.get("webserver") or entry.get("server"),
+                        })
                     continue
 
             # Status code tracking
@@ -903,7 +915,8 @@ def parse_httpx_output(output_file: str, root_domain: str = None, allowed_hosts:
         "by_host": by_host,
         "technologies_found": technologies_found,
         "servers_found": servers_found,
-        "summary": summary
+        "summary": summary,
+        "external_domains": external_domain_entries,
     }
 
 

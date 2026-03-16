@@ -158,6 +158,7 @@ def run_urlscan_enrichment(combined_result: dict, settings: dict[str, Any]) -> d
     # Track domain age (take max from all results)
     domain_age_days = None
     apex_domain_age_days = None
+    external_domain_entries = []  # Collect out-of-scope domains for situational awareness
 
     for result in results:
         page = result.get("page", {})
@@ -197,6 +198,19 @@ def run_urlscan_enrichment(combined_result: dict, settings: dict[str, Any]) -> d
         if url_domain:
             subdomains.add(url_domain)
             is_in_scope = True  # URL hostname confirms scope
+
+        # Collect out-of-scope domains for situational awareness
+        if not is_in_scope and page_domain:
+            external_domain_entries.append({
+                "domain": page_domain,
+                "source": "urlscan",
+                "url": page_url,
+                "status_code": int(page_status) if page_status.isdigit() else None,
+                "title": page_title,
+                "server": page_server,
+                "ip": page_ip,
+                "country": page_country,
+            })
 
         # Track IPs (in-scope only — foreign IPs would pollute the graph)
         if page_ip and is_in_scope:
@@ -250,6 +264,7 @@ def run_urlscan_enrichment(combined_result: dict, settings: dict[str, Any]) -> d
         "apex_domain_age_days": apex_domain_age_days,
         "urls_with_paths": urls_with_paths,
         "entries": entries,
+        "external_domains": external_domain_entries,
     }
 
     print(f"[+] URLScan results: {len(results)} scans found")

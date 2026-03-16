@@ -38,6 +38,9 @@ export const NODE_COLORS: Record<string, string> = {
   GithubSecret: '#7c6f9b',        // Muted dusty purple - leaked secret (API key, credential)
   GithubSensitiveFile: '#5b8a72',  // Muted sage green - sensitive file (.env, config)
 
+  // EXTERNAL / OUT-OF-SCOPE (informational, not a target)
+  ExternalDomain: '#8b8178',       // Warm stone gray
+
   // ATTACK CHAIN (Amber family) — Agent execution history
   AttackChain: '#f59e0b',     // Amber - Chain root
   ChainStep: '#f59e0b',       // Amber - Execution steps

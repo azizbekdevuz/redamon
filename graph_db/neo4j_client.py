@@ -315,6 +315,8 @@ class Neo4jClient:
             "CREATE CONSTRAINT githubpath_unique IF NOT EXISTS FOR (gp:GithubPath) REQUIRE gp.id IS UNIQUE",
             "CREATE CONSTRAINT githubsecret_unique IF NOT EXISTS FOR (gs:GithubSecret) REQUIRE gs.id IS UNIQUE",
             "CREATE CONSTRAINT githubsensitivefile_unique IF NOT EXISTS FOR (gsf:GithubSensitiveFile) REQUIRE gsf.id IS UNIQUE",
+            # External Domain constraints
+            "CREATE CONSTRAINT externaldomain_unique IF NOT EXISTS FOR (ed:ExternalDomain) REQUIRE (ed.domain, ed.user_id, ed.project_id) IS UNIQUE",
             # Attack Chain Graph constraints
             "CREATE CONSTRAINT attack_chain_id IF NOT EXISTS FOR (ac:AttackChain) REQUIRE ac.chain_id IS UNIQUE",
             "CREATE CONSTRAINT chain_step_id IF NOT EXISTS FOR (s:ChainStep) REQUIRE s.step_id IS UNIQUE",
@@ -344,6 +346,8 @@ class Neo4jClient:
             "CREATE INDEX idx_githubpath_tenant IF NOT EXISTS FOR (gp:GithubPath) ON (gp.user_id, gp.project_id)",
             "CREATE INDEX idx_githubsecret_tenant IF NOT EXISTS FOR (gs:GithubSecret) ON (gs.user_id, gs.project_id)",
             "CREATE INDEX idx_githubsensitivefile_tenant IF NOT EXISTS FOR (gsf:GithubSensitiveFile) ON (gsf.user_id, gsf.project_id)",
+            # External Domain tenant indexes
+            "CREATE INDEX idx_externaldomain_tenant IF NOT EXISTS FOR (ed:ExternalDomain) ON (ed.user_id, ed.project_id)",
             # Attack Chain Graph tenant indexes
             "CREATE INDEX idx_attackchain_tenant IF NOT EXISTS FOR (ac:AttackChain) ON (ac.user_id, ac.project_id)",
             "CREATE INDEX idx_chainstep_tenant IF NOT EXISTS FOR (s:ChainStep) ON (s.user_id, s.project_id)",
@@ -4810,6 +4814,69 @@ class Neo4jClient:
                 print(f"[!] {len(stats['errors'])} errors occurred")
 
         return stats
+
+
+    def update_graph_from_external_domains(self, recon_data, user_id, project_id):
+        """Update graph with aggregated external (out-of-scope) domains.
+
+        Creates ExternalDomain nodes and links them to the target Domain node
+        via HAS_EXTERNAL_DOMAIN relationship. These nodes are informational only —
+        they are never scanned or attacked.
+        """
+        external_domains = recon_data.get("external_domains_aggregated", [])
+        domain = recon_data.get("domain", "")
+        if not external_domains:
+            return
+
+        print(f"\n[GRAPH] External Domains: {len(external_domains)} foreign domains")
+
+        created = 0
+        with self.driver.session() as session:
+            for ed in external_domains:
+                ed_domain = ed.get("domain", "")
+                if not ed_domain:
+                    continue
+                try:
+                    result = session.run("""
+                        MERGE (ed:ExternalDomain {domain: $ed_domain, user_id: $uid, project_id: $pid})
+                        ON CREATE SET ed.first_seen_at = datetime()
+                        SET ed.sources = $sources,
+                            ed.redirect_from_urls = $redirect_from,
+                            ed.redirect_to_urls = $redirect_to,
+                            ed.status_codes_seen = $status_codes,
+                            ed.titles_seen = $titles,
+                            ed.servers_seen = $servers,
+                            ed.ips_seen = $ips,
+                            ed.countries_seen = $countries,
+                            ed.times_seen = $times_seen,
+                            ed.updated_at = datetime()
+                        RETURN ed.first_seen_at = ed.updated_at AS is_new
+                    """, ed_domain=ed_domain, uid=user_id, pid=project_id,
+                        sources=ed.get("sources", []),
+                        redirect_from=ed.get("redirect_from_urls", []),
+                        redirect_to=ed.get("redirect_to_urls", []),
+                        status_codes=ed.get("status_codes_seen", []),
+                        titles=ed.get("titles_seen", []),
+                        servers=ed.get("servers_seen", []),
+                        ips=ed.get("ips_seen", []),
+                        countries=ed.get("countries_seen", []),
+                        times_seen=ed.get("times_seen", 0),
+                    )
+                    record = result.single()
+                    if record and record["is_new"]:
+                        created += 1
+
+                    # Link to Domain node
+                    if domain:
+                        session.run("""
+                            MATCH (d:Domain {name: $domain, user_id: $uid, project_id: $pid})
+                            MATCH (ed:ExternalDomain {domain: $ed_domain, user_id: $uid, project_id: $pid})
+                            MERGE (d)-[:HAS_EXTERNAL_DOMAIN]->(ed)
+                        """, domain=domain, ed_domain=ed_domain, uid=user_id, pid=project_id)
+                except Exception as e:
+                    logger.warning(f"ExternalDomain graph error for {ed_domain}: {e}")
+
+        print(f"[+] External domains: {created} created, {len(external_domains) - created} updated")
 
 
 if __name__ == "__main__":

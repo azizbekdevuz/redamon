@@ -5,6 +5,8 @@ import { ChevronDown, Shield } from 'lucide-react'
 import { Toggle } from '@/components/ui'
 import type { Project } from '@prisma/client'
 import styles from '../ProjectForm.module.css'
+import { NodeInfoTooltip } from '../NodeInfoTooltip'
+import { SECTION_NODE_MAP } from '../nodeMapping'
 import { TimeEstimate } from '../TimeEstimate'
 
 type FormData = Omit<Project, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'user'>
@@ -34,6 +36,7 @@ export function NucleiSection({ data, updateField }: NucleiSectionProps) {
         <h2 className={styles.sectionTitle}>
           <Shield size={16} />
           Nuclei Vulnerability Scanner
+          <NodeInfoTooltip nodes={SECTION_NODE_MAP.Nuclei} />
           <span className={styles.badgeActive}>Active</span>
         </h2>
         <ChevronDown

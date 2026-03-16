@@ -49,12 +49,17 @@
   composes: tabGroup;
   background: rgba(59, 130, 246, 0.04);
   border-color: rgba(59, 130, 246, 0.10);
+  padding: 2px 11px;
+  justify-content: center;
+  align-items: center;
 }
 
 .tabGroupRecon {
   composes: tabGroup;
   background: rgba(34, 197, 94, 0.04);
   border-color: rgba(34, 197, 94, 0.10);
+  padding: 2px 4px;
+  gap: 1px;
 }
 
 .tabGroupAgent {
@@ -67,6 +72,8 @@
   composes: tabGroup;
   background: rgba(251, 146, 60, 0.04);
   border-color: rgba(251, 146, 60, 0.10);
+  justify-content: center;
+  align-items: center;
 }
 
 .tabGroupPlain {
@@ -86,9 +93,21 @@
 
 .tabGroupTabs {
   display: flex;
-  gap: var(--space-1);
+  gap: 2px;
   margin-top: auto;
   margin-bottom: auto;
+}
+
+.compactTab {
+  padding: 4px 1px !important;
+  font-size: 11px !important;
+  text-align: center;
+  line-height: 1.2;
+  white-space: normal !important;
+}
+
+.wideTab {
+  padding: 4px 14px !important;
 }
 
 .content {
@@ -742,4 +761,52 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+/* Node info tooltip */
+.nodeInfoIcon {
+  color: var(--text-tertiary);
+  cursor: help;
+  flex-shrink: 0;
+  opacity: 0.6;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.nodeInfoIcon:hover {
+  opacity: 1;
+  color: var(--accent-secondary);
+}
+
+.nodeInfoContent {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.nodeInfoLabel {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-tertiary);
+}
+
+.nodeInfoPills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.nodeInfoPill {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 9999px;
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.30);
+  white-space: nowrap;
 }

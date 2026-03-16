@@ -1109,9 +1109,20 @@ GVM-specific properties (source="gvm"):
 - retry_possible (boolean), phase (string)
 - created_at (datetime)
 
-## Relationships 
+**ExternalDomain** - Foreign domains encountered during recon (out-of-scope, informational only)
+- domain (string): foreign domain name
+- sources (string[]): discovery sources (http_probe_redirect, urlscan, gau, katana, cert_discovery)
+- redirect_from_urls (string[]): in-scope URLs that redirected to this domain
+- redirect_to_urls (string[]): foreign URLs encountered
+- status_codes_seen (string[]), titles_seen (string[]), servers_seen (string[])
+- ips_seen (string[]), countries_seen (string[])
+- times_seen (integer): total encounters
+- first_seen_at (datetime), updated_at (datetime)
+
+## Relationships
 
 ### Infrastructure Relationships
+- `(d:Domain)-[:HAS_EXTERNAL_DOMAIN]->(ed:ExternalDomain)` - Domain encountered foreign domain during recon
 - `(s:Subdomain)-[:BELONGS_TO]->(d:Domain)` - Subdomain belongs to Domain
 - `(s:Subdomain)-[:RESOLVES_TO]->(i:IP)` - Subdomain resolves to IP (DNS)
 - `(i:IP)-[:HAS_PORT]->(p:Port)` - IP has open Port

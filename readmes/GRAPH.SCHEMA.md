@@ -765,6 +765,72 @@ FOR (e:ExploitGvm) ON (e.user_id, e.project_id);
 
 ---
 
+### 22. ExternalDomain
+
+Foreign domains encountered during recon that are outside the target scope.
+These are **informational only** — they are never scanned, probed, or attacked.
+They provide situational awareness about where the target's infrastructure redirects
+to or what domains share certificates/hosting with the target.
+
+```cypher
+(:ExternalDomain {
+    domain: "evil.com",                           // Foreign domain name (UNIQUE per tenant)
+    user_id: "...",
+    project_id: "...",
+
+    // Discovery context
+    sources: ["http_probe_redirect", "urlscan"],  // How discovered (array)
+    first_seen_at: datetime(),
+
+    // Redirect context (from http_probe)
+    redirect_from_urls: ["https://target.com/login"],   // In-scope URLs that redirected here
+    redirect_to_urls: ["https://evil.com/landing"],     // The actual foreign URLs
+
+    // Basic metadata (from whatever source provided it)
+    status_codes_seen: ["200", "301"],
+    titles_seen: ["Evil Landing Page"],
+    servers_seen: ["nginx"],
+    ips_seen: ["1.2.3.4"],
+    countries_seen: ["CN"],
+
+    times_seen: 3,                                // Total encounters across all sources
+    updated_at: datetime()
+})
+```
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `domain` | String | Foreign domain name (UNIQUE per tenant) |
+| `sources` | String[] | Discovery sources: http_probe_redirect, urlscan, gau, katana, cert_discovery |
+| `first_seen_at` | DateTime | When first encountered |
+| `redirect_from_urls` | String[] | In-scope URLs that redirected to this domain |
+| `redirect_to_urls` | String[] | The actual foreign URLs encountered |
+| `status_codes_seen` | String[] | HTTP status codes seen |
+| `titles_seen` | String[] | Page titles seen |
+| `servers_seen` | String[] | Server headers seen |
+| `ips_seen` | String[] | IP addresses seen (from URLScan) |
+| `countries_seen` | String[] | Countries seen (from URLScan) |
+| `times_seen` | Integer | Total encounters across all sources |
+| `updated_at` | DateTime | Last updated |
+
+**Constraints:**
+```cypher
+CREATE CONSTRAINT externaldomain_unique IF NOT EXISTS
+FOR (ed:ExternalDomain) REQUIRE (ed.domain, ed.user_id, ed.project_id) IS UNIQUE;
+
+CREATE INDEX idx_externaldomain_tenant IF NOT EXISTS
+FOR (ed:ExternalDomain) ON (ed.user_id, ed.project_id);
+```
+
+**Relationship:**
+```cypher
+(Domain)-[:HAS_EXTERNAL_DOMAIN]->(ExternalDomain)
+```
+
+**Visual:** Dashed circle, warm stone gray (#8b8178).
+
+---
+
 ---
 
 ## 🔗 Relationships
@@ -774,6 +840,9 @@ FOR (e:ExploitGvm) ON (e.user_id, e.project_id);
 ```cypher
 // Domain owns subdomains
 (Domain)-[:HAS_SUBDOMAIN]->(Subdomain)
+
+// Domain encountered foreign domains during recon
+(Domain)-[:HAS_EXTERNAL_DOMAIN]->(ExternalDomain)
 
 // Domain WHOIS contacts (if needed as separate nodes)
 (Domain)-[:REGISTERED_BY {registrar_url: "..."}]->(Registrar)

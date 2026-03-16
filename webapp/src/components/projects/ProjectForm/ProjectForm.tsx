@@ -57,7 +57,7 @@ const TAB_GROUPS = [
     label: 'Scope',
     style: 'tabGroupScope',
     tabs: [
-      { id: 'roe', label: 'Rules of Engagement' },
+      { id: 'roe', label: 'RoE' },
     ],
   },
   {
@@ -68,12 +68,12 @@ const TAB_GROUPS = [
       { id: 'discovery', label: 'Discovery & OSINT' },
       { id: 'port', label: 'Port Scanning' },
       { id: 'http', label: 'HTTP Probing' },
-      { id: 'resource', label: 'Resource Enumeration' },
+      { id: 'resource', label: 'Resource Enum' },
       { id: 'vuln', label: 'Vulnerability Scanning' },
       { id: 'cve', label: 'CVE & MITRE' },
       { id: 'security', label: 'Security Checks' },
       { id: 'gvm', label: 'GVM Scan' },
-      { id: 'integrations', label: 'Integrations' },
+      { id: 'integrations', label: 'Integrations', wide: true },
     ],
   },
   {
@@ -352,7 +352,7 @@ export function ProjectForm({
                     <button
                       key={tab.id}
                       type="button"
-                      className={`tab ${activeTab === tab.id ? 'tabActive' : ''}`}
+                      className={`tab ${activeTab === tab.id ? 'tabActive' : ''} ${styles.compactTab} ${'wide' in tab && tab.wide ? styles.wideTab : ''}`}
                       onClick={() => setActiveTab(tab.id)}
                     >
                       {tab.label}

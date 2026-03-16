@@ -172,7 +172,7 @@ async def initialize_node(state: AgentState, config, *, llm, neo4j_creds) -> dic
 
     # Scope guardrail: on first invocation, verify the project target is authorized
     # Skip if already blocked (avoid redundant LLM calls on retry in same session)
-    if not state.get("execution_trace") and not state.get("_guardrail_blocked"):
+    if get_setting('AGENT_GUARDRAIL_ENABLED', True) and not state.get("execution_trace") and not state.get("_guardrail_blocked"):
         guardrail_block = await _run_scope_guardrail(llm, user_id, project_id, session_id)
         if guardrail_block is not None:
             return guardrail_block

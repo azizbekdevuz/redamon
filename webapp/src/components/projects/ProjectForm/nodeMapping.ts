@@ -1,0 +1,15 @@
+export const SECTION_NODE_MAP: Record<string, string[]> = {
+  SubdomainDiscovery: ['Domain', 'Subdomain', 'IP', 'DNSRecord', 'ExternalDomain'],
+  Shodan:             ['IP', 'Port', 'Service', 'Subdomain', 'DNSRecord', 'Vulnerability', 'CVE'],
+  Urlscan:            ['Domain', 'Subdomain', 'IP', 'Endpoint', 'Parameter'],
+  Naabu:              ['Port', 'Service'],
+  Httpx:              ['BaseURL', 'Certificate', 'Technology', 'Header', 'Service', 'Port', 'ExternalDomain'],
+  Katana:             ['Endpoint', 'Parameter', 'BaseURL', 'ExternalDomain'],
+  Gau:                ['Endpoint', 'Parameter', 'BaseURL', 'ExternalDomain'],
+  Kiterunner:         ['Endpoint', 'Parameter', 'BaseURL'],
+  Nuclei:             ['Vulnerability', 'Endpoint', 'Parameter', 'CVE', 'MitreData', 'Capec'],
+  CveLookup:          ['CVE', 'MitreData', 'Capec'],
+  GvmScan:            ['Vulnerability', 'Technology', 'Traceroute', 'Certificate', 'ExploitGvm', 'CVE'],
+  Github:             ['GithubHunt', 'GithubRepository', 'GithubPath', 'GithubSecret', 'GithubSensitiveFile'],
+  SecurityChecks:     ['Vulnerability'],
+}

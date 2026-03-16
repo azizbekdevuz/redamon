@@ -109,6 +109,51 @@ def _filter_roe_excluded(hosts: list, settings: dict, label: str = "host") -> li
     return filtered
 
 
+def _merge_external_domain(aggregated: dict, entry: dict):
+    """Merge a single external domain entry into the aggregated dict."""
+    domain = entry.get("domain", "").strip().lower()
+    if not domain:
+        return
+    if domain not in aggregated:
+        aggregated[domain] = {
+            "domain": domain, "sources": [], "redirect_from_urls": [],
+            "redirect_to_urls": [], "status_codes_seen": [], "titles_seen": [],
+            "servers_seen": [], "ips_seen": [], "countries_seen": [], "times_seen": 0,
+        }
+    rec = aggregated[domain]
+    rec["times_seen"] += 1
+    for val, key in [
+        (entry.get("source"), "sources"),
+        (entry.get("url"), "redirect_to_urls"),
+        (entry.get("redirect_from_url"), "redirect_from_urls"),
+        (entry.get("title"), "titles_seen"),
+        (entry.get("server"), "servers_seen"),
+        (entry.get("ip"), "ips_seen"),
+        (entry.get("country"), "countries_seen"),
+    ]:
+        if val and val not in rec[key]:
+            rec[key].append(val)
+    sc = entry.get("status_code")
+    if sc is not None:
+        sc_str = str(sc)
+        if sc_str not in rec["status_codes_seen"]:
+            rec["status_codes_seen"].append(sc_str)
+
+
+def _aggregate_external_domains(combined_result: dict) -> list:
+    """Aggregate external domains from all pipeline sources."""
+    aggregated = {}
+    for e in combined_result.get("http_probe", {}).get("external_domains", []):
+        _merge_external_domain(aggregated, e)
+    for e in combined_result.get("urlscan", {}).get("external_domains", []):
+        _merge_external_domain(aggregated, e)
+    for e in combined_result.get("resource_enum", {}).get("external_domains", []):
+        _merge_external_domain(aggregated, e)
+    for e in combined_result.get("domain_discovery_external_domains", []):
+        _merge_external_domain(aggregated, e)
+    return list(aggregated.values())
+
+
 def should_skip_active_scans(recon_data: dict) -> tuple:
     """
     Check if active scanning modules (resource_enum, vuln_scan) should be skipped.
@@ -506,6 +551,36 @@ def run_ip_recon(target_ips: list, settings: dict) -> dict:
                 except Exception as e:
                     print(f"[!] Vuln scan graph update failed: {e}")
 
+    # External Domains — aggregate from all sources and persist
+    ext_domains = _aggregate_external_domains(combined_result)
+    if ext_domains:
+        combined_result["external_domains_aggregated"] = ext_domains
+        save_recon_file(combined_result, output_file)
+
+        if UPDATE_GRAPH_DB:
+            print(f"\n[GRAPH UPDATE] External Domains")
+            print("-" * 40)
+            try:
+                from graph_db import Neo4jClient
+                with Neo4jClient() as graph_client:
+                    if graph_client.verify_connection():
+                        graph_client.update_graph_from_external_domains(
+                            combined_result, USER_ID, PROJECT_ID
+                        )
+                        combined_result["metadata"]["graph_db_external_domains_updated"] = True
+                        print(f"[+] Graph database updated with {len(ext_domains)} external domains")
+                    else:
+                        print(f"[!] Could not connect to Neo4j - skipping external domains graph update")
+                        combined_result["metadata"]["graph_db_external_domains_updated"] = False
+            except ImportError:
+                print(f"[!] Neo4j client not available - skipping external domains graph update")
+                combined_result["metadata"]["graph_db_external_domains_updated"] = False
+            except Exception as e:
+                print(f"[!] External domain graph update failed: {e}")
+                combined_result["metadata"]["graph_db_external_domains_updated"] = False
+
+            save_recon_file(combined_result, output_file)
+
     print(f"\n{'=' * 70}")
     print(f"[+] IP RECON COMPLETE")
     print(f"[+] IPs scanned: {len(expanded_ips)}")
@@ -669,6 +744,9 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
         combined_result["subdomains"] = discovered_subs
         combined_result["subdomain_count"] = len(discovered_subs)
         combined_result["metadata"]["modules_executed"].append("subdomain_discovery")
+        # Capture external domains from cert discovery
+        if recon_result.get("external_domains"):
+            combined_result["domain_discovery_external_domains"] = recon_result["external_domains"]
         save_recon_file(combined_result, output_file)
         print(f"[+] Saved: {output_file}")
 
@@ -938,6 +1016,36 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
                     combined_result["metadata"]["graph_db_vuln_scan_error"] = str(e)
 
                 save_recon_file(combined_result, output_file)
+
+    # External Domains — aggregate from all sources and persist
+    ext_domains = _aggregate_external_domains(combined_result)
+    if ext_domains:
+        combined_result["external_domains_aggregated"] = ext_domains
+        save_recon_file(combined_result, output_file)
+
+        if UPDATE_GRAPH_DB:
+            print(f"\n[GRAPH UPDATE] External Domains")
+            print("-" * 40)
+            try:
+                from graph_db import Neo4jClient
+                with Neo4jClient() as graph_client:
+                    if graph_client.verify_connection():
+                        graph_client.update_graph_from_external_domains(
+                            combined_result, USER_ID, PROJECT_ID
+                        )
+                        combined_result["metadata"]["graph_db_external_domains_updated"] = True
+                        print(f"[+] Graph database updated with {len(ext_domains)} external domains")
+                    else:
+                        print(f"[!] Could not connect to Neo4j - skipping external domains graph update")
+                        combined_result["metadata"]["graph_db_external_domains_updated"] = False
+            except ImportError:
+                print(f"[!] Neo4j client not available - skipping external domains graph update")
+                combined_result["metadata"]["graph_db_external_domains_updated"] = False
+            except Exception as e:
+                print(f"[!] External domain graph update failed: {e}")
+                combined_result["metadata"]["graph_db_external_domains_updated"] = False
+
+            save_recon_file(combined_result, output_file)
 
     # Print summary
     print(f"\n{'=' * 70}")

@@ -411,6 +411,20 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
                 onChange={(checked) => updateField('agentRequireApprovalForPostExploitation', checked)}
               />
             </div>
+            <div className={styles.toggleRow}>
+              <div>
+                <span className={styles.toggleLabel}>Agent Guardrail</span>
+                <p className={styles.toggleDescription}>
+                  Verify target authorization on session start and enforce scope restrictions
+                  in the agent&apos;s prompt. Blocks the agent from operating against well-known
+                  public targets and prevents out-of-scope actions.
+                </p>
+              </div>
+              <Toggle
+                checked={data.agentGuardrailEnabled ?? true}
+                onChange={(checked) => updateField('agentGuardrailEnabled', checked)}
+              />
+            </div>
           </div>
 
           {/* Kali Shell — Library Installation */}

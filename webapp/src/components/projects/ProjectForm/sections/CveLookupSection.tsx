@@ -5,6 +5,8 @@ import { ChevronDown, Database } from 'lucide-react'
 import { Toggle } from '@/components/ui'
 import type { Project } from '@prisma/client'
 import styles from '../ProjectForm.module.css'
+import { NodeInfoTooltip } from '../NodeInfoTooltip'
+import { SECTION_NODE_MAP } from '../nodeMapping'
 import { TimeEstimate } from '../TimeEstimate'
 
 type FormData = Omit<Project, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'user'>
@@ -23,6 +25,7 @@ export function CveLookupSection({ data, updateField }: CveLookupSectionProps) {
         <h2 className={styles.sectionTitle}>
           <Database size={16} />
           CVE Lookup
+          <NodeInfoTooltip nodes={SECTION_NODE_MAP.CveLookup} />
           <span className={styles.badgePassive}>Passive</span>
         </h2>
         <div className={styles.sectionHeaderRight}>

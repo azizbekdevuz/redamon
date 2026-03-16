@@ -280,6 +280,25 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
               />
             </div>
           </div>
+
+          {/* Target Guardrail */}
+          <div className={styles.subSection}>
+            <h3 className={styles.subSectionTitle}>Target Guardrail</h3>
+            <div className={styles.toggleRow} style={{ gap: 'var(--space-4)' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <span className={styles.toggleLabel}>Enable Target Guardrail</span>
+                <p className={styles.toggleDescription}>
+                  Block well-known public targets (government sites, major tech companies,
+                  cloud providers, financial institutions, etc.) when saving the project.
+                  Prevents accidental scanning of unauthorized domains.
+                </p>
+              </div>
+              <Toggle
+                checked={data.targetGuardrailEnabled ?? true}
+                onChange={(checked) => updateField('targetGuardrailEnabled', checked)}
+              />
+            </div>
+          </div>
         </div>
       )}
     </div>

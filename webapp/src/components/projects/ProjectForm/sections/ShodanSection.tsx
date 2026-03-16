@@ -6,6 +6,8 @@ import { Toggle } from '@/components/ui'
 import type { Project } from '@prisma/client'
 import { useProject } from '@/providers/ProjectProvider'
 import styles from '../ProjectForm.module.css'
+import { NodeInfoTooltip } from '../NodeInfoTooltip'
+import { SECTION_NODE_MAP } from '../nodeMapping'
 
 type FormData = Omit<Project, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'user'>
 
@@ -41,6 +43,7 @@ export function ShodanSection({ data, updateField }: ShodanSectionProps) {
         <h2 className={styles.sectionTitle}>
           <Radar size={16} />
           Shodan Enrichment
+          <NodeInfoTooltip nodes={SECTION_NODE_MAP.Shodan} />
           <span className={styles.badgePassive}>Passive</span>
         </h2>
         <ChevronDown

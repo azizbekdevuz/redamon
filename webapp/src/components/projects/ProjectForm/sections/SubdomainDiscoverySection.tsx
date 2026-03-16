@@ -5,6 +5,8 @@ import { ChevronDown, Search } from 'lucide-react'
 import { Toggle } from '@/components/ui'
 import type { Project } from '@prisma/client'
 import styles from '../ProjectForm.module.css'
+import { NodeInfoTooltip } from '../NodeInfoTooltip'
+import { SECTION_NODE_MAP } from '../nodeMapping'
 import { TimeEstimate } from '../TimeEstimate'
 
 type FormData = Omit<Project, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'user'>
@@ -23,6 +25,7 @@ export function SubdomainDiscoverySection({ data, updateField }: SubdomainDiscov
         <h2 className={styles.sectionTitle}>
           <Search size={16} />
           Subdomain Discovery
+          <NodeInfoTooltip nodes={SECTION_NODE_MAP.SubdomainDiscovery} />
         </h2>
         <ChevronDown
           size={16}
@@ -52,6 +55,22 @@ export function SubdomainDiscoverySection({ data, updateField }: SubdomainDiscov
                 onChange={(checked) => updateField('crtshEnabled', checked)}
               />
             </div>
+            {data.crtshEnabled && (
+              <div className={styles.fieldRow}>
+                <div className={styles.fieldGroup}>
+                  <label className={styles.fieldLabel}>Max Results</label>
+                  <input
+                    type="number"
+                    className="textInput"
+                    value={data.crtshMaxResults}
+                    onChange={(e) => updateField('crtshMaxResults', parseInt(e.target.value) || 5000)}
+                    min={1}
+                    max={50000}
+                  />
+                  <span className={styles.fieldHint}>Maximum subdomains to collect from crt.sh</span>
+                </div>
+              </div>
+            )}
 
             <div className={styles.toggleRow}>
               <div>
@@ -65,6 +84,22 @@ export function SubdomainDiscoverySection({ data, updateField }: SubdomainDiscov
                 onChange={(checked) => updateField('hackerTargetEnabled', checked)}
               />
             </div>
+            {data.hackerTargetEnabled && (
+              <div className={styles.fieldRow}>
+                <div className={styles.fieldGroup}>
+                  <label className={styles.fieldLabel}>Max Results</label>
+                  <input
+                    type="number"
+                    className="textInput"
+                    value={data.hackerTargetMaxResults}
+                    onChange={(e) => updateField('hackerTargetMaxResults', parseInt(e.target.value) || 5000)}
+                    min={1}
+                    max={50000}
+                  />
+                  <span className={styles.fieldHint}>Maximum subdomains to collect from HackerTarget</span>
+                </div>
+              </div>
+            )}
 
             <div className={styles.toggleRow}>
               <div>
@@ -78,6 +113,22 @@ export function SubdomainDiscoverySection({ data, updateField }: SubdomainDiscov
                 onChange={(checked) => updateField('knockpyReconEnabled', checked)}
               />
             </div>
+            {data.knockpyReconEnabled && (
+              <div className={styles.fieldRow}>
+                <div className={styles.fieldGroup}>
+                  <label className={styles.fieldLabel}>Max Results</label>
+                  <input
+                    type="number"
+                    className="textInput"
+                    value={data.knockpyReconMaxResults}
+                    onChange={(e) => updateField('knockpyReconMaxResults', parseInt(e.target.value) || 5000)}
+                    min={1}
+                    max={50000}
+                  />
+                  <span className={styles.fieldHint}>Maximum subdomains to collect from Knockpy</span>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className={styles.subSection}>

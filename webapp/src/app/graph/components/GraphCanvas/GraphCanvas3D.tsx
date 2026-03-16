@@ -239,6 +239,18 @@ export function GraphCanvas3D({
           group.add(wireMesh)
         }
 
+        // Wireframe overlay for external domain nodes (dashed appearance in 3D)
+        if (graphNode.type === 'ExternalDomain') {
+          const wireMaterial = new THREE.MeshBasicMaterial({
+            color: nodeColor,
+            wireframe: true,
+            transparent: true,
+            opacity: 0.5,
+          })
+          const wireMesh = new THREE.Mesh(geometry, wireMaterial)
+          group.add(wireMesh)
+        }
+
         // Add clean edge outline for chain nodes (only polygon edges, no triangulation)
         if (isChainNode) {
           const edges = new THREE.EdgesGeometry(geometry, 15)

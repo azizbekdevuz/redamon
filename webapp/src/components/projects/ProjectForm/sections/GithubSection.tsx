@@ -5,6 +5,8 @@ import { ChevronDown, Github } from 'lucide-react'
 import { Toggle } from '@/components/ui'
 import type { Project } from '@prisma/client'
 import styles from '../ProjectForm.module.css'
+import { NodeInfoTooltip } from '../NodeInfoTooltip'
+import { SECTION_NODE_MAP } from '../nodeMapping'
 import { TimeEstimate } from '../TimeEstimate'
 
 type FormData = Omit<Project, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'user'>
@@ -25,6 +27,7 @@ export function GithubSection({ data, updateField }: GithubSectionProps) {
         <h2 className={styles.sectionTitle}>
           <Github size={16} />
           GitHub Secret Hunting
+          <NodeInfoTooltip nodes={SECTION_NODE_MAP.Github} />
           <span className={styles.badgePassive}>Passive</span>
         </h2>
         <ChevronDown

@@ -52,9 +52,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Color-shifting pupil** cycling through 13 bright colors (yellow, cyan, orange, purple, green, pink, etc.)
   - **60 rotating hacker-themed phrases** displayed in random order every 5 seconds with fade-in animation (e.g., "Unmasking the hidden...", "Piercing the veil...", "Becoming root...")
 
+- **URLScan.io OSINT Integration** — new passive enrichment module that queries URLScan.io's Search API to discover subdomains, IPs, TLS metadata, server technologies, domain age, and screenshots from historical scans. Runs in the recon pipeline after domain discovery, before port scanning. Full integration across the stack:
+  - **New module**: `recon/urlscan_enrich.py` — fetches historical scan data from URLScan.io for each discovered domain. Works without API key (public results) or with API key (higher rate limits and access to private scans)
+  - **Passive OSINT data**: discovers in-scope subdomains, IP addresses, URL paths for endpoint creation, TLS validity, ASN information, and external domains from historical scans
+  - **GAU provider deduplication**: when URLScan enrichment has already run, the `urlscan` provider is automatically removed from GAU's data sources to avoid redundant API calls to the same underlying data
+  - **Pipeline placement**: runs after domain discovery and before port scanning, alongside Shodan enrichment
+  - **Project settings**: `urlscanEnabled` toggle and `urlscanMaxResults` (default: 500) configurable per project. Optional API key in Global Settings → Tool API Keys
+  - **Frontend**: new `UrlscanSection.tsx` in the Discovery & OSINT tab with passive badge, API key status indicator, and max results configuration
+
+- **ExternalDomain Node** — new graph node type for tracking out-of-scope domains encountered during reconnaissance. Provides situational awareness about the target's external dependencies without scanning them:
+  - **Schema**: `(:ExternalDomain { domain, sources[], redirect_from_urls[], redirect_to_urls[], status_codes_seen[], titles_seen[], servers_seen[], ips_seen[], countries_seen[], times_seen, first_seen_at, updated_at })`
+  - **Relationship**: `(d:Domain)-[:HAS_EXTERNAL_DOMAIN]->(ed:ExternalDomain)`
+  - **Multi-source aggregation**: external domains are collected from HTTP probe redirects, URLScan historical data, GAU passive archives, Katana crawling, and certificate transparency — then merged and deduplicated
+  - **Neo4j constraints**: unique constraint on `(domain, user_id, project_id)` with tenant-scoped index
+  - **Neo4j client**: new `update_graph_from_external_domains()` method for creating ExternalDomain nodes and HAS_EXTERNAL_DOMAIN relationships
+  - **Graph schema docs**: `GRAPH.SCHEMA.md` updated with full ExternalDomain documentation
+
+- **Discovery & OSINT Tab** — new unified tab in the project form replacing the previous scattered tool placement. Groups all passive and active discovery tools in a single section:
+  - **Subdomain Discovery** — passive sources (crt.sh, HackerTarget, Knockpy Recon) and active brute-forcing (Knockpy Bruteforce), plus DNS settings (WHOIS/DNS retries)
+  - **Shodan OSINT Enrichment** — moved from the Integrations tab into Discovery & OSINT, reflecting its role as a core discovery tool rather than an external integration. All four toggles (Host Lookup, Reverse DNS, Domain DNS, Passive CVEs) remain unchanged
+  - **URLScan.io Enrichment** — new section with passive badge, max results config, and API key status
+  - **Node Info Tooltips** — each section header now has a waypoints icon that shows which graph node types the tool creates (via `NodeInfoTooltip` component and `nodeMapping.ts`)
+  - Recon toggle switches moved to section headers for cleaner layout
+
+- **Agent Guardrail Toggle** — the scope guardrail (LLM-based target verification) can now be enabled or disabled per project:
+  - **New setting**: `agentGuardrailEnabled` (default: `true`) — when disabled, the agent skips the scope verification check on session start
+  - **Initialize node**: guardrail check is now conditional, skipped when setting is false or on retries to avoid redundant LLM calls
+  - **Think node**: scope guardrail reminder in the system prompt only injected when enabled
+  - **Guardrail LLM bootstrapping**: the guardrail API endpoint now fetches the user's configured LLM providers from the database to properly initialize the LLM with the correct API keys (OpenAI, Anthropic, or OpenRouter)
+  - **Frontend**: checkbox in Agent Behaviour section
+  - **Fail-closed**: if the guardrail check itself fails (API error, LLM error), the agent is blocked by default (security-first)
+
+- **Multi-source CVE Attribution** — CVE nodes created from Shodan data now track their source (`source` property) instead of hardcoding "shodan", enabling future enrichment from multiple CVE databases (NVD, Vulners, etc.)
+
+### Fixed
+
+- **Banner grabbing data loss** — fixed falsy value filtering in `neo4j_client.py` banner property handling. Changed `if v` to `if v is not None` to preserve empty strings and zero values that are valid banner data
+
 ### Changed
 
 - Kali sandbox Dockerfile updated
+- Shodan OSINT Enrichment moved from the Integrations tab to the new Discovery & OSINT tab in the project form
+- Integrations tab now contains only GitHub Secret Hunting (Shodan removed)
+- Recon pipeline toggle switches moved from section bodies to section headers for a cleaner UI
 - Documentation and wiki updates
 
 ---

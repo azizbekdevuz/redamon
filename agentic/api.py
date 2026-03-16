@@ -108,6 +108,7 @@ class GuardrailRequest(BaseModel):
     target_domain: str = ""
     target_ips: list[str] = []
     project_id: str = ""
+    user_id: str = ""
 
 
 @app.post("/guardrail/check-target", tags=["Guardrail"])
@@ -134,12 +135,40 @@ async def check_target_guardrail(body: GuardrailRequest):
                 orchestrator._apply_project_settings(body.project_id)
             except Exception as e:
                 logger.warning(f"Guardrail: failed to load project settings: {e}")
-        # Still no LLM? Bootstrap with default model (no project_id at creation time)
+        # Still no LLM? Bootstrap with default model + user's API keys from DB
         if not orchestrator.llm:
             try:
-                orchestrator.model_name = DEFAULT_AGENT_SETTINGS['OPENAI_MODEL']
-                orchestrator._setup_llm()
-                logger.info(f"Guardrail: bootstrapped LLM with default model {orchestrator.model_name}")
+                from orchestrator_helpers.llm_setup import setup_llm, _resolve_provider_key
+                import requests as _requests
+
+                model_name = DEFAULT_AGENT_SETTINGS['OPENAI_MODEL']
+                user_providers = []
+
+                # Fetch user's LLM providers from DB (needed for API keys)
+                if body.user_id:
+                    webapp_url = os.environ.get('WEBAPP_API_URL', 'http://webapp:3000')
+                    try:
+                        resp = _requests.get(
+                            f"{webapp_url.rstrip('/')}/api/users/{body.user_id}/llm-providers?internal=true",
+                            timeout=10,
+                        )
+                        resp.raise_for_status()
+                        user_providers = resp.json()
+                    except Exception as e:
+                        logger.warning(f"Guardrail: failed to fetch user LLM providers: {e}")
+
+                openai_p = _resolve_provider_key(user_providers, "openai")
+                anthropic_p = _resolve_provider_key(user_providers, "anthropic")
+                openrouter_p = _resolve_provider_key(user_providers, "openrouter")
+
+                orchestrator.llm = setup_llm(
+                    model_name,
+                    openai_api_key=(openai_p or {}).get("apiKey"),
+                    anthropic_api_key=(anthropic_p or {}).get("apiKey"),
+                    openrouter_api_key=(openrouter_p or {}).get("apiKey"),
+                )
+                orchestrator.model_name = model_name
+                logger.info(f"Guardrail: bootstrapped LLM with default model {model_name}")
             except Exception as e:
                 logger.warning(f"Guardrail: failed to bootstrap default LLM: {e}")
                 return {"allowed": True, "reason": "LLM not configured, guardrail skipped"}

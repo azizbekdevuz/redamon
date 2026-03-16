@@ -47,6 +47,13 @@ export default function GraphPage() {
   const { selectedNode, drawerOpen, selectNode, clearSelection } = useNodeSelection()
   const dimensions = useDimensions(contentRef)
 
+  // Close all drawers when project changes
+  useEffect(() => {
+    setIsAIOpen(false)
+    setActiveLogsDrawer(null)
+    clearSelection()
+  }, [projectId, clearSelection])
+
   // Track .body position for fixed-position log drawers
   useEffect(() => {
     const body = bodyRef.current

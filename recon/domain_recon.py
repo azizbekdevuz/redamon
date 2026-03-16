@@ -67,13 +67,19 @@ def get_passive_subdomains(domain: str, session, settings: dict = None) -> set:
     if settings.get('CRTSH_ENABLED', True):
         print(f"[*] Querying crt.sh...")
         try:
+            crtsh_subs = set()
             resp = session.get(f"https://crt.sh/?q=%.{domain}&output=json", timeout=30)
             if resp.status_code == 200:
                 for entry in resp.json():
                     for sub in entry['name_value'].lower().split('\n'):
                         if not sub.startswith('*.'):
-                            subdomains.add(sub.strip())
-                print(f"[+] crt.sh: {len(subdomains)} found")
+                            crtsh_subs.add(sub.strip())
+                max_results = settings.get('CRTSH_MAX_RESULTS', 5000)
+                if len(crtsh_subs) > max_results:
+                    crtsh_subs = set(sorted(crtsh_subs)[:max_results])
+                    print(f"[*] crt.sh: capped at {max_results} results")
+                print(f"[+] crt.sh: {len(crtsh_subs)} found")
+                subdomains.update(crtsh_subs)
         except Exception as e:
             print(f"[!] crt.sh error: {e}")
     else:
@@ -83,14 +89,18 @@ def get_passive_subdomains(domain: str, session, settings: dict = None) -> set:
     if settings.get('HACKERTARGET_ENABLED', True):
         print(f"[*] Querying HackerTarget...")
         try:
+            ht_subs = set()
             resp = session.get(f"https://api.hackertarget.com/hostsearch/?q={domain}", timeout=30)
             if resp.status_code == 200 and "error" not in resp.text.lower():
-                count = 0
                 for line in resp.text.strip().split('\n'):
                     if ',' in line:
-                        subdomains.add(line.split(',')[0].strip())
-                        count += 1
-                print(f"[+] HackerTarget: {count} found")
+                        ht_subs.add(line.split(',')[0].strip())
+                max_results = settings.get('HACKERTARGET_MAX_RESULTS', 5000)
+                if len(ht_subs) > max_results:
+                    ht_subs = set(sorted(ht_subs)[:max_results])
+                    print(f"[*] HackerTarget: capped at {max_results} results")
+                print(f"[+] HackerTarget: {len(ht_subs)} found")
+                subdomains.update(ht_subs)
         except Exception as e:
             print(f"[!] HackerTarget error: {e}")
     else:
@@ -130,6 +140,10 @@ def run_knockpy(domain: str, proxychains_prefix: list, bruteforce: bool = False,
         matches = re.findall(r'([\w.-]+\.' + re.escape(domain) + r')', clean_output)
         subdomains.update(matches)
         
+        max_results = settings.get('KNOCKPY_RECON_MAX_RESULTS', 5000)
+        if len(subdomains) > max_results:
+            subdomains = set(sorted(subdomains)[:max_results])
+            print(f"[*] Knockpy: capped at {max_results} results")
         if subdomains:
             print(f"[+] Knockpy: {len(subdomains)} found")
         else:
@@ -362,10 +376,17 @@ def discover_subdomains(domain: str, anonymous: bool = False, bruteforce: bool =
     passive = get_passive_subdomains(domain, session, settings=settings)
     active = run_knockpy(domain, pc_prefix, bruteforce, settings=settings)
     
-    # Combine, filter, sort
+    # Combine, filter, sort — collect out-of-scope domains for situational awareness
     all_subs = passive.union(active)
-    all_subs = sorted([s for s in all_subs if s == domain or s.endswith("." + domain)])
-    
+    filtered_subs = []
+    external_domain_entries = []
+    for s in all_subs:
+        if s == domain or s.endswith("." + domain):
+            filtered_subs.append(s)
+        elif s and '@' not in s:  # non-empty, out-of-scope (skip email addresses from crt.sh)
+            external_domain_entries.append({"domain": s, "source": "cert_discovery"})
+    all_subs = sorted(filtered_subs)
+
     # Build result structure
     result = {
         "metadata": {
@@ -378,7 +399,8 @@ def discover_subdomains(domain: str, anonymous: bool = False, bruteforce: bool =
         "domain": domain,
         "subdomains": all_subs,
         "subdomain_count": len(all_subs),
-        "dns": None
+        "dns": None,
+        "external_domains": external_domain_entries,
     }
     
     # DNS Resolution for domain + all subdomains

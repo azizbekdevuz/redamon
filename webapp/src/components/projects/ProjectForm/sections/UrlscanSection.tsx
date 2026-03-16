@@ -6,6 +6,8 @@ import { Toggle } from '@/components/ui'
 import type { Project } from '@prisma/client'
 import { useProject } from '@/providers/ProjectProvider'
 import styles from '../ProjectForm.module.css'
+import { NodeInfoTooltip } from '../NodeInfoTooltip'
+import { SECTION_NODE_MAP } from '../nodeMapping'
 
 type FormData = Omit<Project, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'user'>
 
@@ -39,6 +41,7 @@ export function UrlscanSection({ data, updateField }: UrlscanSectionProps) {
         <h2 className={styles.sectionTitle}>
           <Globe size={16} />
           URLScan.io Enrichment
+          <NodeInfoTooltip nodes={SECTION_NODE_MAP.Urlscan} />
           <span className={styles.badgePassive}>Passive</span>
         </h2>
         <div className={styles.sectionHeaderRight}>
@@ -79,7 +82,7 @@ export function UrlscanSection({ data, updateField }: UrlscanSectionProps) {
                   type="number"
                   className="textInput"
                   value={data.urlscanMaxResults}
-                  onChange={(e) => updateField('urlscanMaxResults', parseInt(e.target.value) || 500)}
+                  onChange={(e) => updateField('urlscanMaxResults', parseInt(e.target.value) || 5000)}
                   min={1}
                   max={10000}
                 />
