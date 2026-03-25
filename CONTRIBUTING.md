@@ -113,7 +113,7 @@ Open a Pull Request against `master`. The [PR template](.github/PULL_REQUEST_TEM
 
 ### Step 5 — Celebrate
 
-Your first merged PR earns you the **First Blood** rank. You get added to the [Contributors Wall of Fame](README.md#contributors-wall-of-fame). Welcome to the team.
+Your first merged PR earns you the **Scout** rank and a spot in the [Contributors Wall of Fame](README.md#contributors-wall-of-fame). Welcome to the team.
 
 ---
 
@@ -224,10 +224,9 @@ Your contributions earn you ranks. The naming follows red team terminology becau
 
 | Rank | How to earn it | Key reward |
 |------|---------------|------------|
-| **First Blood** | 1 merged PR or 3 confirmed bug reports | Name in Wall of Fame |
-| **Scout** | 3 merged PRs or 5 confirmed bug reports + 1 merged PR | Bio in Wall of Fame |
+| **Scout** | 5 merged PRs or 5 confirmed bug reports + 1 merged PR | Name in Wall of Fame |
 | **Broadcaster** | 1 published YouTube video featuring RedAmon | Video in README showcase, name in Wall of Fame |
-| **Hunter** | 7 merged PRs across at least 2 tracks | LinkedIn recommendation from maintainer |
+| **Hunter** | 10 merged PRs across at least 2 tracks | LinkedIn recommendation from maintainer |
 | **Elite** | 15 merged PRs including at least 1 major roadmap feature | Blog co-authorship, private contributor channel |
 | **Core** | Sustained contribution + demonstrated deep codebase knowledge | Push access, roadmap vote, release credits |
 
@@ -235,7 +234,7 @@ Your contributions earn you ranks. The naming follows red team terminology becau
 - The maintainer assesses rank at each PR merge — no formal application needed
 - Ranks are cumulative — you keep what you earned
 - Bug reports count, not just code
-- The "across 2+ tracks" requirement for Hunter encourages breadth
+- The "across 2+ tracks" requirement for Hunter (10 PRs) encourages breadth
 - Core is by invitation — it requires trust and sustained engagement, not just a number
 - You can request a rank review anytime by opening a discussion
 
@@ -247,8 +246,7 @@ Every rank unlocks real rewards. No empty promises.
 
 | Reward | Starting rank | Details |
 |--------|--------------|---------|
-| README recognition | First Blood | Name + GitHub link in [Contributors Wall of Fame](README.md#contributors-wall-of-fame) |
-| Bio in Wall of Fame | Scout | One-liner with your role, certs, or expertise |
+| Wall of Fame recognition | Scout | Name + GitHub link in [Contributors Wall of Fame](README.md#contributors-wall-of-fame) |
 | Video in README showcase | Broadcaster | Your video embedded in the [Video Showcase](README.md#video-showcase) section — visible to every visitor |
 | LinkedIn recommendation | Hunter | The maintainer writes a personalized LinkedIn recommendation highlighting your open-source contributions |
 | Early access | Hunter | Access to feature branches before public release |

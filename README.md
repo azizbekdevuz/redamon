@@ -72,35 +72,6 @@ We maintain a public **[Project Board](https://github.com/users/samugit83/projec
 
 > **Want to contribute?** See [CONTRIBUTING.md](CONTRIBUTING.md) for how to get started.
 
-### Contributors Wall of Fame
-
-A special thanks to the people who go above and beyond — contributing code, spreading the word, and helping shape RedAmon into a better tool for the community. These are our project champions and evangelists. See [CONTRIBUTING.md](CONTRIBUTING.md#contributor-ranks) for how ranks work.
-
-| Contributor | Rank | Tracks | GitHub |
-|------------|------|--------|--------|
-| defektive | First Blood | Feature Builder | [github.com/defektive](https://github.com/defektive) |
-| vishalsingh-arch | First Blood | Feature Builder | [github.com/vishalsingh-arch](https://github.com/vishalsingh-arch) |
-
-### Community Showcase
-
-Videos, writeups, and real-world experiences from security professionals using RedAmon in the field. Want to be featured? See the [Content Creator](CONTRIBUTING.md#content-creator) track in CONTRIBUTING.md.
-
-#### Videos
-
-| Title | Link |
-|-------|------|
-| RedAmon v2.2.0 — Social Engineering Test: Payload Delivery to Shell Access | [Watch](https://youtu.be/kVjV9K_eks4) |
-| AI Agent CVE Validation — Beyond Standard Tooling | [Watch](https://youtu.be/rypmP1SJon8) |
-| RedAmon 2.0 — From 0 to 1000 GitHub Stars in 10 Days: Multi-Agent Parallel Attacks | [Watch](https://youtu.be/afViJUit0xE) |
-| Build an Autonomous AI Red Team Agent from Scratch — LangGraph + Metasploit + Neo4j Full Tutorial | [Watch](https://youtu.be/mO5CCkYlY94) |
-
-#### Real-World Case Studies
-
-| Who | What | Link |
-|-----|------|------|
-| Nipun Dinudaya | Deployed RedAmon on a company website — identified a critical SQL injection vulnerability that could have caused significant data exposure | [Read on LinkedIn](https://www.linkedin.com/posts/nipun-dinudaya-6159b32bb_redamon-cybersecurity-penetrationtesting-ugcPost-7431233870253166592-aLvb) |
-| Venkata Bhargav CH S | Used RedAmon during an internship at Ascent e-Digit Solutions — hands-on reconnaissance, DNS analysis, and attack surface mapping | [Read on LinkedIn](https://www.linkedin.com/posts/venkata-bhargav-cybersecurity_cybersecurity-ethicalhacking-redteam-share-7434940660803182592-e9En) |
-
 ### Maintainers
 
 <table>
@@ -249,6 +220,7 @@ No rebuild needed — just restart.
 - [Documentation](#documentation)
 - [Updating to a New Version](#updating-to-a-new-version)
 - [Troubleshooting](#troubleshooting)
+- [Community Showcase](#community-showcase)
 - [Legal](#legal)
 
 ---
@@ -602,6 +574,35 @@ docker compose up -d postgres neo4j recon-orchestrator kali-sandbox agent webapp
 ## Troubleshooting
 
 RedAmon is fully Dockerized and runs on any OS with Docker Compose v2+. For OS-specific fixes (Linux, Windows, macOS), see **[Troubleshooting Guide](readmes/TROUBLESHOOTING.md)** or the **[Wiki](https://github.com/samugit83/redamon/wiki/Troubleshooting)**.
+
+---
+
+## Community Showcase
+
+Videos, writeups, and real-world experiences from security professionals using RedAmon in the field. Want to be featured? See the [Content Creator](CONTRIBUTING.md#content-creator) track in CONTRIBUTING.md.
+
+### Videos
+
+| Title | Link |
+|-------|------|
+| RedAmon v2.2.0 — Social Engineering Test: Payload Delivery to Shell Access | [Watch](https://youtu.be/kVjV9K_eks4) |
+| AI Agent CVE Validation — Beyond Standard Tooling | [Watch](https://youtu.be/rypmP1SJon8) |
+| RedAmon 2.0 — From 0 to 1000 GitHub Stars in 10 Days: Multi-Agent Parallel Attacks | [Watch](https://youtu.be/afViJUit0xE) |
+| Build an Autonomous AI Red Team Agent from Scratch — LangGraph + Metasploit + Neo4j Full Tutorial | [Watch](https://youtu.be/mO5CCkYlY94) |
+
+### Real-World Case Studies
+
+| Who | What | Link |
+|-----|------|------|
+| Nipun Dinudaya | Deployed RedAmon on a company website — identified a critical SQL injection vulnerability that could have caused significant data exposure | [Read on LinkedIn](https://www.linkedin.com/posts/nipun-dinudaya-6159b32bb_redamon-cybersecurity-penetrationtesting-ugcPost-7431233870253166592-aLvb) |
+| Venkata Bhargav CH S | Used RedAmon during an internship at Ascent e-Digit Solutions — hands-on reconnaissance, DNS analysis, and attack surface mapping | [Read on LinkedIn](https://www.linkedin.com/posts/venkata-bhargav-cybersecurity_cybersecurity-ethicalhacking-redteam-share-7434940660803182592-e9En) |
+
+### Community Guides
+
+| Who | What | Link |
+|-----|------|------|
+| MrGood | Mastering Redamon: A Comprehensive Guide to Installation on Kali Linux — addressing Kali-specific Docker challenges and security posture | [Read on Medium](https://cyberaccoon.medium.com/mastering-redamon-a-comprehensive-guide-to-installation-on-kali-linux-ea544e6f5b9f) |
+| Bogdan Caraman | How to Install RedAmon on Debian 13 (Trixie) with OpenRouter — step-by-step guide with Docker setup, static IP, and systemd automation | [Read on Blog](https://blog.bogdancaraman.com/install-redamon-debian-13-openrouter/) |
 
 ---
 
