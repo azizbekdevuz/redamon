@@ -54,6 +54,7 @@ TARGET_IPS = _settings['TARGET_IPS']
 from recon.whois_recon import whois_lookup
 from recon.domain_recon import discover_subdomains, verify_domain_ownership, reverse_dns_lookup
 from recon.port_scan import run_port_scan, run_port_scan_isolated
+from recon.masscan_scan import run_masscan_scan
 from recon.http_probe import run_http_probe
 from recon.resource_enum import run_resource_enum
 from recon.vuln_scan import run_vuln_scan
@@ -361,6 +362,88 @@ def save_recon_file(data: dict, output_file: Path):
         json.dump(data, f, indent=2)
 
 
+def merge_port_scan_results(combined_result: dict) -> None:
+    """
+    Merge masscan_scan results into port_scan for downstream consumers.
+
+    http_probe, graph_db, and other modules only read recon_data["port_scan"].
+    This function merges masscan-discovered ports into that key, deduplicating
+    by host+port. If only masscan ran (no naabu), its data becomes port_scan.
+    """
+    masscan_data = combined_result.get("masscan_scan")
+    if not masscan_data:
+        return
+
+    port_scan = combined_result.get("port_scan")
+
+    if not port_scan:
+        combined_result["port_scan"] = {
+            "scan_metadata": masscan_data.get("scan_metadata", {}),
+            "by_host": dict(masscan_data.get("by_host", {})),
+            "by_ip": dict(masscan_data.get("by_ip", {})),
+            "all_ports": list(masscan_data.get("all_ports", [])),
+            "ip_to_hostnames": dict(masscan_data.get("ip_to_hostnames", {})),
+            "summary": dict(masscan_data.get("summary", {})),
+        }
+        return
+
+    # Both scanners ran — merge masscan into port_scan, deduplicating
+    for host, mdata in masscan_data.get("by_host", {}).items():
+        if host not in port_scan["by_host"]:
+            port_scan["by_host"][host] = mdata
+        else:
+            existing = port_scan["by_host"][host]
+            for port in mdata.get("ports", []):
+                if port not in existing["ports"]:
+                    existing["ports"].append(port)
+            for pd in mdata.get("port_details", []):
+                if pd["port"] not in [x["port"] for x in existing.get("port_details", [])]:
+                    existing.setdefault("port_details", []).append(pd)
+            existing["ports"].sort()
+            if "port_details" in existing:
+                existing["port_details"].sort(key=lambda x: x["port"])
+
+    for ip, mdata in masscan_data.get("by_ip", {}).items():
+        if ip not in port_scan["by_ip"]:
+            port_scan["by_ip"][ip] = mdata
+        else:
+            existing = port_scan["by_ip"][ip]
+            for port in mdata.get("ports", []):
+                if port not in existing["ports"]:
+                    existing["ports"].append(port)
+            for hn in mdata.get("hostnames", []):
+                if hn not in existing.get("hostnames", []):
+                    existing.setdefault("hostnames", []).append(hn)
+            existing["ports"].sort()
+
+    merged_ports = sorted(set(port_scan.get("all_ports", []) + masscan_data.get("all_ports", [])))
+    port_scan["all_ports"] = merged_ports
+
+    for ip, hosts in masscan_data.get("ip_to_hostnames", {}).items():
+        existing_hosts = port_scan.setdefault("ip_to_hostnames", {}).setdefault(ip, [])
+        for h in (hosts if isinstance(hosts, list) else [hosts]):
+            if h not in existing_hosts:
+                existing_hosts.append(h)
+
+    existing_meta = port_scan.get("scan_metadata", {})
+    scanners = existing_meta.get("scanners", ["naabu"])
+    if "masscan" not in scanners:
+        scanners.append("masscan")
+    existing_meta["scanners"] = scanners
+
+    by_host = port_scan["by_host"]
+    by_ip = port_scan["by_ip"]
+    port_scan["summary"] = {
+        "hosts_scanned": len(by_host),
+        "ips_scanned": len(by_ip),
+        "hosts_with_open_ports": len([h for h in by_host.values() if h.get("ports")]),
+        "total_open_ports": sum(len(h.get("ports", [])) for h in by_host.values()),
+        "unique_ports": merged_ports,
+        "unique_port_count": len(merged_ports),
+        "cdn_hosts": len([h for h in by_host.values() if h.get("is_cdn")]),
+    }
+
+
 def run_ip_recon(target_ips: list, settings: dict) -> dict:
     """
     Run IP-based reconnaissance: expand CIDRs, reverse DNS, IP WHOIS.
@@ -595,6 +678,13 @@ def run_ip_recon(target_ips: list, settings: dict) -> dict:
 
         if "shodan" in combined_result:
             _graph_update_bg("update_graph_from_shodan", combined_result, USER_ID, PROJECT_ID)
+
+        # Run Masscan after Naabu port scan completes, then merge results
+        if settings.get('MASSCAN_ENABLED', False) and "port_scan" in combined_result:
+            combined_result = run_masscan_scan(combined_result, output_file=None, settings=settings)
+            merge_port_scan_results(combined_result)
+            save_recon_file(combined_result, output_file)
+
         if "port_scan" in combined_result:
             _graph_update_bg("update_graph_from_port_scan", combined_result, USER_ID, PROJECT_ID)
 
@@ -908,6 +998,13 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
         # Background graph updates for Shodan + port scan
         if "shodan" in combined_result:
             _graph_update_bg("update_graph_from_shodan", combined_result, USER_ID, PROJECT_ID)
+
+        # Run Masscan after Naabu port scan completes, then merge results
+        if _settings.get('MASSCAN_ENABLED', False) and "port_scan" in combined_result:
+            combined_result = run_masscan_scan(combined_result, output_file=None, settings=_settings)
+            merge_port_scan_results(combined_result)
+            save_recon_file(combined_result, output_file)
+
         if "port_scan" in combined_result:
             _graph_update_bg("update_graph_from_port_scan", combined_result, USER_ID, PROJECT_ID)
 
@@ -1200,6 +1297,11 @@ def main():
             if "metadata" in domain_result and "modules_executed" in domain_result["metadata"]:
                 if "port_scan" not in domain_result["metadata"]["modules_executed"]:
                     domain_result["metadata"]["modules_executed"].append("port_scan")
+
+            if _settings.get('MASSCAN_ENABLED', False):
+                domain_result = run_masscan_scan(domain_result, output_file=None, settings=_settings)
+                merge_port_scan_results(domain_result)
+
             with open(output_file, 'w') as f:
                 json.dump(domain_result, f, indent=2)
 

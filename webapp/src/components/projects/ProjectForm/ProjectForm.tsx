@@ -12,6 +12,7 @@ import styles from './ProjectForm.module.css'
 import { TargetSection } from './sections/TargetSection'
 import { ScanModulesSection } from './sections/ScanModulesSection'
 import { NaabuSection } from './sections/NaabuSection'
+import { MasscanSection } from './sections/MasscanSection'
 import { HttpxSection } from './sections/HttpxSection'
 import { NucleiSection } from './sections/NucleiSection'
 import { KatanaSection } from './sections/KatanaSection'
@@ -427,7 +428,10 @@ export function ProjectForm({
         )}
 
         {activeTab === 'port' && (
-          <NaabuSection data={formData} updateField={updateField} />
+          <>
+            <NaabuSection data={formData} updateField={updateField} />
+            <MasscanSection data={formData} updateField={updateField} />
+          </>
         )}
 
         {activeTab === 'http' && (

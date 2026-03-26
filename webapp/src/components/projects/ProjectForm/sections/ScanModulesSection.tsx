@@ -15,7 +15,7 @@ interface ScanModulesSectionProps {
 
 const SCAN_MODULE_OPTIONS = [
   { id: 'domain_discovery', label: 'Discovery & OSINT', description: 'Subdomain enumeration, Shodan, URLScan', indent: 0 },
-  { id: 'port_scan', label: 'Port Scanning', description: 'Naabu port scanner', indent: 1 },
+  { id: 'port_scan', label: 'Port Scanning', description: 'Naabu + Masscan port scanners', indent: 1 },
   { id: 'http_probe', label: 'HTTP Probing', description: 'httpx HTTP analysis', indent: 2 },
   { id: 'resource_enum', label: 'Resource Enumeration', description: 'Katana, GAU, Kiterunner', indent: 3 },
   { id: 'vuln_scan', label: 'Vulnerability Scanning', description: 'Nuclei vulnerability scanner', indent: 3 },

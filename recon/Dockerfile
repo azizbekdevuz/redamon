@@ -16,6 +16,14 @@ RUN apk add --no-cache gcc musl-dev && \
 FROM golang:1.22-alpine AS ffuf-builder
 RUN CGO_ENABLED=0 go install github.com/ffuf/ffuf/v2@latest
 
+# Stage 1c: Build masscan from source (C project, requires libpcap)
+FROM debian:bookworm-slim AS masscan-builder
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git gcc make libpcap-dev ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && git clone --depth 1 https://github.com/robertdavidgraham/masscan.git /masscan \
+    && cd /masscan && make -j$(nproc)
+
 # Stage 2: Main recon image
 FROM python:3.11-slim-bookworm
 
@@ -69,9 +77,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libffi-dev \
     libssl-dev \
+    # Runtime dependency for masscan
+    libpcap0.8 \
     # Clean up apt cache
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
+
+# Copy masscan binary from builder stage
+COPY --from=masscan-builder /masscan/bin/masscan /usr/local/bin/masscan
 
 # Configure proxychains for Tor
 # Use dynamic_chain for better reliability

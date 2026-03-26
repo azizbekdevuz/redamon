@@ -82,6 +82,7 @@ DEFAULT_AGENT_SETTINGS: dict[str, Any] = {
         'query_graph': ['informational', 'exploitation', 'post_exploitation'],
         'execute_curl': ['informational', 'exploitation', 'post_exploitation'],
         'execute_naabu': ['informational', 'exploitation'],
+        'execute_masscan': ['informational', 'exploitation'],
         'execute_nmap': ['informational', 'exploitation', 'post_exploitation'],
         'execute_nuclei': ['informational', 'exploitation'],
         'kali_shell': ['informational', 'exploitation', 'post_exploitation'],

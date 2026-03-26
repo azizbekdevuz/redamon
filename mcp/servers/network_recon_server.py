@@ -473,6 +473,56 @@ def get_hydra_progress() -> dict:
         }
 
 
+@mcp.tool()
+def execute_masscan(args: str) -> str:
+    """
+    Execute masscan port scanner with any valid CLI arguments.
+
+    Masscan is the fastest port scanner — optimized for scanning large networks
+    and IP ranges using asynchronous SYN packets. Requires root or CAP_NET_RAW.
+
+    IMPORTANT: Masscan only accepts IP addresses and CIDR ranges (NOT hostnames).
+    Resolve hostnames to IPs first using dig/nslookup before scanning.
+
+    Args:
+        args: Complete masscan CLI arguments as a single string.
+
+    Examples:
+        "10.0.0.0/24 -p 80,443 --rate 1000"
+        "-iL /tmp/ips.txt --top-ports 100 --rate 5000"
+        "192.168.1.1 -p 0-65535 --rate 10000 --banners"
+
+    Returns:
+        Masscan scan output or error message.
+    """
+    try:
+        cmd_args = shlex.split(args)
+        result = subprocess.run(
+            ["masscan"] + cmd_args,
+            capture_output=True,
+            text=True,
+            timeout=600
+        )
+
+        output = ""
+        if result.stdout:
+            output += result.stdout
+        if result.stderr:
+            stderr_lines = result.stderr.strip().split('\n')
+            useful_stderr = [l for l in stderr_lines if not l.startswith('rate:')]
+            if useful_stderr:
+                output += "\n[STDERR]\n" + "\n".join(useful_stderr)
+
+        return output.strip() if output.strip() else "[INFO] Scan completed with no output."
+
+    except subprocess.TimeoutExpired:
+        return "[ERROR] Command timed out after 600 seconds. Use smaller target ranges or fewer ports."
+    except FileNotFoundError:
+        return "[ERROR] masscan not found. Ensure it is installed in the Kali sandbox."
+    except Exception as e:
+        return f"[ERROR] {str(e)}"
+
+
 class HydraProgressHandler(BaseHTTPRequestHandler):
     """HTTP handler for Hydra progress endpoint."""
 

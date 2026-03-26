@@ -60,6 +60,16 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'NAABU_VERIFY_PORTS': True,
     'NAABU_PASSIVE_MODE': False,
 
+    # Masscan Port Scanner (off by default)
+    'MASSCAN_ENABLED': False,
+    'MASSCAN_TOP_PORTS': '1000',
+    'MASSCAN_CUSTOM_PORTS': '',
+    'MASSCAN_RATE': 1000,
+    'MASSCAN_BANNERS': False,
+    'MASSCAN_WAIT': 10,
+    'MASSCAN_RETRIES': 1,
+    'MASSCAN_EXCLUDE_TARGETS': '',
+
     # httpx HTTP Probing
     'HTTPX_DOCKER_IMAGE': 'projectdiscovery/httpx:latest',
     'HTTPX_THREADS': 50,
@@ -503,6 +513,16 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['NAABU_VERIFY_PORTS'] = project.get('naabuVerifyPorts', DEFAULT_SETTINGS['NAABU_VERIFY_PORTS'])
     settings['NAABU_PASSIVE_MODE'] = project.get('naabuPassiveMode', DEFAULT_SETTINGS['NAABU_PASSIVE_MODE'])
 
+    # Masscan Port Scanner
+    settings['MASSCAN_ENABLED'] = project.get('masscanEnabled', DEFAULT_SETTINGS['MASSCAN_ENABLED'])
+    settings['MASSCAN_TOP_PORTS'] = project.get('masscanTopPorts', DEFAULT_SETTINGS['MASSCAN_TOP_PORTS'])
+    settings['MASSCAN_CUSTOM_PORTS'] = project.get('masscanCustomPorts', DEFAULT_SETTINGS['MASSCAN_CUSTOM_PORTS'])
+    settings['MASSCAN_RATE'] = project.get('masscanRate', DEFAULT_SETTINGS['MASSCAN_RATE'])
+    settings['MASSCAN_BANNERS'] = project.get('masscanBanners', DEFAULT_SETTINGS['MASSCAN_BANNERS'])
+    settings['MASSCAN_WAIT'] = project.get('masscanWait', DEFAULT_SETTINGS['MASSCAN_WAIT'])
+    settings['MASSCAN_RETRIES'] = project.get('masscanRetries', DEFAULT_SETTINGS['MASSCAN_RETRIES'])
+    settings['MASSCAN_EXCLUDE_TARGETS'] = project.get('masscanExcludeTargets', DEFAULT_SETTINGS['MASSCAN_EXCLUDE_TARGETS'])
+
     # httpx HTTP Probing
     settings['HTTPX_DOCKER_IMAGE'] = project.get('httpxDockerImage', DEFAULT_SETTINGS['HTTPX_DOCKER_IMAGE'])
     settings['HTTPX_THREADS'] = project.get('httpxThreads', DEFAULT_SETTINGS['HTTPX_THREADS'])
@@ -824,7 +844,7 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     roe_max_rps = settings['ROE_GLOBAL_MAX_RPS']
     if settings.get('ROE_ENABLED', False) and roe_max_rps > 0:
         RATE_LIMIT_KEYS = [
-            'NAABU_RATE_LIMIT', 'HTTPX_RATE_LIMIT', 'NUCLEI_RATE_LIMIT',
+            'NAABU_RATE_LIMIT', 'MASSCAN_RATE', 'HTTPX_RATE_LIMIT', 'NUCLEI_RATE_LIMIT',
             'KATANA_RATE_LIMIT', 'GAU_VERIFY_RATE_LIMIT', 'GAU_METHOD_DETECT_RATE_LIMIT',
             'KITERUNNER_RATE_LIMIT', 'KITERUNNER_METHOD_DETECT_RATE_LIMIT',
             'FFUF_RATE', 'ARJUN_RATE_LIMIT',
@@ -1014,7 +1034,10 @@ def apply_stealth_overrides(settings: dict[str, Any]) -> dict[str, Any]:
     settings['SECURITY_CHECK_NO_RATE_LIMITING'] = False
     # Passive checks remain enabled (SPF, DMARC, DNSSEC, TLS expiry, headers)
 
-    logger.info("Stealth overrides applied: Naabu=passive, httpx=low-rate, Katana=minimal, "
+    # --- Masscan: DISABLED (active SYN scanning) ---
+    settings['MASSCAN_ENABLED'] = False
+
+    logger.info("Stealth overrides applied: Naabu=passive, Masscan=OFF, httpx=low-rate, Katana=minimal, "
                 "Nuclei=no-DAST, Kiterunner=OFF, BannerGrab=OFF, BruteForce=OFF, "
                 "ActiveSecurityChecks=OFF")
 

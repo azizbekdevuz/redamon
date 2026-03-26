@@ -59,6 +59,8 @@ RUN apt-get install -y --fix-missing \
     perl \
     # Build dependencies for naabu (requires libpcap)
     libpcap-dev \
+    # Masscan port scanner (for AI agent network reconnaissance)
+    masscan \
     # Clean up
     && rm -rf /var/lib/apt/lists/*
 
