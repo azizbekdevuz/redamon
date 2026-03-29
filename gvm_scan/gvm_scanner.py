@@ -375,7 +375,8 @@ class GVMScanner:
         """
         print(f"    [⏳] Waiting for task {task_id}...")
         start_time = time.time()
-        
+        progress_note_shown = False
+
         while True:
             elapsed = time.time() - start_time
             
@@ -397,6 +398,11 @@ class GVMScanner:
             
             print(f"        Status: {status_text} | Progress: {progress_text}% | "
                   f"Elapsed: {int(elapsed)}s")
+
+            if not progress_note_shown and status_text == "Running" and progress_text in ("0", "-1") and elapsed > 60:
+                print("        [i] Progress may stay at 0% for a while. "
+                      "This is normal -- GVM runs thousands of checks before reporting progress.")
+                progress_note_shown = True
             
             if status_text == "Done":
                 return status_text, report_id
