@@ -382,12 +382,20 @@ services:
       KALI_TERMINAL_WS_URL: ws://kali-sandbox:8016
       # Webapp API (internal docker network)
       WEBAPP_API_URL: http://webapp:3000
+      # Claude Code CLI auth — pass ANTHROPIC_API_KEY from host shell if set.
+      # This is a zero-config path: export ANTHROPIC_API_KEY=sk-ant-... in your
+      # shell once and every container restart picks it up automatically.
+      # Alternatively, run: docker exec -it redamon-agent claude login
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./agentic:/app
       - ./agentic/logs:/app/logs
       - cypherfix-repos:/tmp/cypherfix-repos
+      # Mount host Claude Code credentials so the claude CLI authenticates without any API key
+      - ${HOME}/.claude:/root/.claude:rw
+      - ${HOME}/.claude.json:/root/.claude.json:rw
     depends_on:
       neo4j:
         condition: service_healthy

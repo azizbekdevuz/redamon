@@ -219,6 +219,39 @@ async def fetch_bedrock_models(
 
 
 # ---------------------------------------------------------------------------
+# Claude Code (via host proxy)
+# ---------------------------------------------------------------------------
+async def fetch_claude_code_models(proxy_url: str = "http://host.docker.internal:8099") -> list[dict]:
+    """Fetch available models from the Claude Code host proxy."""
+    base = proxy_url.rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(f"{base}/v1/models")
+            resp.raise_for_status()
+        data = resp.json().get("data", [])
+        return [
+            _model(
+                id=m.get("id", ""),
+                name=m.get("display_name", m.get("id", "")),
+                context_length=m.get("context_length"),
+                description="Claude Code (via host proxy — no API key needed)",
+            )
+            for m in data
+            if m.get("id")
+        ]
+    except Exception as exc:
+        logger.warning(f"Could not reach Claude Code proxy at {proxy_url}: {exc}")
+        # Return a static fallback list so users can still pick a model
+        return [
+            _model("claude-code/claude-opus-4-6", "Claude Opus 4.6 (via Claude Code)", 200000, "Claude Code"),
+            _model("claude-code/claude-sonnet-4-6", "Claude Sonnet 4.6 (via Claude Code)", 200000, "Claude Code"),
+            _model("claude-code/claude-haiku-4-5-20251001", "Claude Haiku 4.5 (via Claude Code)", 200000, "Claude Code"),
+            _model("claude-code/claude-sonnet-4-5-20251001", "Claude Sonnet 4.5 (via Claude Code)", 200000, "Claude Code"),
+            _model("claude-code/claude-opus-4-5-20251101", "Claude Opus 4.5 (via Claude Code)", 200000, "Claude Code"),
+        ]
+
+
+# ---------------------------------------------------------------------------
 # Aggregator
 # ---------------------------------------------------------------------------
 async def fetch_all_models(
@@ -275,6 +308,9 @@ async def fetch_all_models(
                         name=f"{pname}",
                         description="Custom",
                     ))
+        elif ptype == "claude_code":
+            proxy_url = (p.get("baseUrl") or "http://host.docker.internal:8099").rstrip("/v1").rstrip("/")
+            tasks_db[f"Claude Code ({pname})"] = fetch_claude_code_models(proxy_url=proxy_url)
 
     # Separate coroutines from pre-built lists
     coro_tasks: dict[str, Any] = {}

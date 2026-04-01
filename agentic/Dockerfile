@@ -30,11 +30,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gnupg \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js 20 LTS + npm (for JS/TS projects)
+# Install Node.js 20 LTS + npm (for JS/TS projects) + Claude Code CLI
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/* \
-    && npm install -g yarn pnpm
+    && npm install -g yarn pnpm @anthropic-ai/claude-code
 
 # Install Go 1.22 (for Go projects)
 RUN curl -fsSL https://go.dev/dl/go1.22.10.linux-amd64.tar.gz | tar -C /usr/local -xz

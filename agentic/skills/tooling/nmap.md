@@ -1,0 +1,55 @@
+---
+name: nmap
+description: Canonical Nmap CLI syntax, two-pass scanning workflow, and sandbox-safe bounded scan patterns.
+---
+
+# Nmap CLI Playbook
+
+Official docs:
+- https://nmap.org/book/man-briefoptions.html
+- https://nmap.org/book/man.html
+- https://nmap.org/book/man-performance.html
+
+Canonical syntax:
+`nmap [Scan Type(s)] [Options] {target specification}`
+
+High-signal flags:
+- `-n` skip DNS resolution
+- `-Pn` skip host discovery when ICMP/ping is filtered
+- `-sS` SYN scan (root/privileged)
+- `-sT` TCP connect scan (no raw-socket privilege)
+- `-sV` detect service versions
+- `-sC` run default NSE scripts
+- `-p <ports>` explicit ports (`-p-` for all TCP ports)
+- `--top-ports <n>` quick common-port sweep
+- `--open` show only hosts with open ports
+- `-T<0-5>` timing template (`-T4` common)
+- `--max-retries <n>` cap retransmissions
+- `--host-timeout <time>` give up on very slow hosts
+- `--script-timeout <time>` bound NSE script runtime
+- `-oA <prefix>` output in normal/XML/grepable formats
+
+Agent-safe baseline for automation:
+`nmap -n -Pn --open --top-ports 100 -T4 --max-retries 1 --host-timeout 90s -oA nmap_quick <host>`
+
+Common patterns:
+- Fast first pass:
+  `nmap -n -Pn --top-ports 100 --open -T4 --max-retries 1 --host-timeout 90s <host>`
+- Service/script enrichment on discovered ports:
+  `nmap -n -Pn -sV -sC -p <comma_ports> --script-timeout 30s --host-timeout 3m -oA nmap_services <host>`
+- No-root fallback:
+  `nmap -n -Pn -sT --top-ports 100 --open --host-timeout 90s <host>`
+
+Critical correctness rules:
+- Prefer two-pass scanning: discovery pass, then enrichment pass.
+- Always set a timeout boundary with `--host-timeout`; add `--script-timeout` whenever NSE scripts are involved.
+- In sandboxed runs, avoid exhaustive sweeps (`-p-`) unless explicitly required.
+- Prefer `naabu` for broad port discovery; use `nmap` for scoped verification/enrichment.
+
+Failure recovery:
+- If host appears down unexpectedly, rerun with `-Pn`.
+- If scan stalls, tighten scope and lower retries.
+- If scripts run too long, add `--script-timeout`.
+
+If uncertain, query web_search with:
+`site:nmap.org/book nmap <flag>`

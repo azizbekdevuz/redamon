@@ -9,6 +9,7 @@ Parallelization:
 - DNS resolution runs concurrently across subdomains (configurable worker count)
 """
 
+import os
 import subprocess
 import requests
 import re
@@ -297,9 +298,23 @@ def run_amass(domain: str, settings: dict = None) -> set:
     amass_temp = Path("/tmp/redamon/.amass_temp")
     amass_temp.mkdir(parents=True, exist_ok=True)
 
+    # Resolve the HOST-side recon path so we can bind-mount the wordlist into
+    # the Amass container (this recon container is itself spawned by the
+    # recon-orchestrator via the host Docker socket, so paths must be HOST paths).
+    host_recon_output = os.environ.get('HOST_RECON_OUTPUT_PATH', '')
+    host_recon_path = os.path.dirname(host_recon_output) if host_recon_output else ''
+    wordlist_host_path = os.path.join(host_recon_path, 'wordlists', 'jhaddix-all.txt') if host_recon_path else ''
+
     command = [
         'docker', 'run', '--rm',
         '-v', f'{amass_temp}:/root/.config/amass',
+    ]
+
+    # Mount the wordlist directory when brute-forcing
+    if brute and wordlist_host_path and os.path.isfile(wordlist_host_path):
+        command += ['-v', f'{wordlist_host_path}:/wordlist/jhaddix-all.txt:ro']
+
+    command += [
         docker_image,
         'enum', '-d', domain,
         '-timeout', str(timeout_min),
@@ -309,6 +324,11 @@ def run_amass(domain: str, settings: dict = None) -> set:
         command.append('-active')
     if brute:
         command.append('-brute')
+        if wordlist_host_path and os.path.isfile(wordlist_host_path):
+            command += ['-w', '/wordlist/jhaddix-all.txt']
+            print(f"[*][Amass] Using jhaddix all.txt wordlist for brute force")
+        else:
+            print(f"[!][Amass] Wordlist not found at {wordlist_host_path!r} — using Amass built-in list")
 
     subdomains = set()
     try:

@@ -997,6 +997,879 @@ def _handle_http_error(e: 'httpx.HTTPStatusError', action: str) -> str:
 
 
 # =============================================================================
+# OSINT TOOL MANAGERS (Censys, FOFA, OTX, Netlas, VirusTotal, ZoomEye, CriminalIP)
+# =============================================================================
+
+def _osint_http_error(tool_name: str, e: 'httpx.HTTPStatusError') -> str:
+    """Shared HTTP error handler for OSINT tool actions."""
+    status = e.response.status_code
+    if status == 401:
+        return f"{tool_name} API error: Invalid API key. Check Global Settings."
+    elif status == 429:
+        return f"{tool_name} API error: Rate limit exceeded. Try again later."
+    return f"{tool_name} API error: HTTP {status}"
+
+
+class CensysToolManager:
+    """Censys internet search — host/service discovery via certificate and banner data."""
+
+    API_BASE = "https://search.censys.io/api/v2"
+
+    def __init__(self, api_id: str = '', api_secret: str = '', api_token: str = ''):
+        self.api_id = api_id
+        self.api_secret = api_secret
+        self.api_token = api_token
+
+    def get_tool(self) -> Optional[callable]:
+        has_token = bool(self.api_token)
+        has_id_secret = bool(self.api_id and self.api_secret)
+        if not has_token and not has_id_secret:
+            logger.warning("Censys API credentials not configured - censys tool unavailable.")
+            return None
+        manager = self
+
+        @tool
+        async def censys(action: str, query: str = "", ip: str = "") -> str:
+            """
+            Censys internet search engine for host and service discovery.
+
+            Actions:
+            - search: Search hosts by query (e.g. "services.port=443 AND location.country=US")
+            - host: Get detailed host info for a specific IP (open ports, services, TLS certs)
+
+            Args:
+                action: "search" or "host"
+                query: Censys search query (for search action)
+                ip: Target IP address (for host action)
+
+            Returns:
+                Formatted results from the Censys API
+            """
+            # Personal API Token (Bearer) takes precedence over ID + Secret (Basic auth)
+            if manager.api_token:
+                client_kwargs = {"timeout": 30.0, "headers": {"Authorization": f"Bearer {manager.api_token}"}}
+            else:
+                client_kwargs = {"timeout": 30.0, "auth": (manager.api_id, manager.api_secret)}
+            try:
+                async with httpx.AsyncClient(**client_kwargs) as client:
+                    if action == "search":
+                        if not query:
+                            return "Error: 'query' required for action='search'"
+                        resp = await client.get(
+                            f"{manager.API_BASE}/hosts/search",
+                            params={"q": query, "per_page": 25},
+                        )
+                    elif action == "host":
+                        if not ip:
+                            return "Error: 'ip' required for action='host'"
+                        resp = await client.get(f"{manager.API_BASE}/hosts/{ip}")
+                    else:
+                        return f"Error: Unknown action '{action}'. Valid: search, host"
+
+                    resp.raise_for_status()
+                    data = resp.json()
+
+                if action == "search":
+                    hits = data.get("result", {}).get("hits", [])
+                    total = data.get("result", {}).get("total", 0)
+                    if not hits:
+                        return f"No Censys results for: {query}"
+                    lines = [f"Censys search: {total} hosts (showing {len(hits)})"]
+                    for i, h in enumerate(hits[:25], 1):
+                        ip_addr = h.get("ip", "?")
+                        services = h.get("services", [])
+                        ports = sorted({s.get("port", 0) for s in services})
+                        location = h.get("location", {})
+                        country = location.get("country", "")
+                        asn_name = h.get("autonomous_system", {}).get("name", "")
+                        line = f"[{i}] {ip_addr}  ports={ports}"
+                        if country:
+                            line += f"  country={country}"
+                        if asn_name:
+                            line += f"  as={asn_name}"
+                        lines.append(line)
+                    return "\n".join(lines)
+
+                # action == "host"
+                result = data.get("result", {})
+                ip_addr = result.get("ip", ip)
+                lines = [f"Censys Host: {ip_addr}"]
+                asn = result.get("autonomous_system", {})
+                if asn.get("name"):
+                    lines.append(f"AS: {asn.get('asn', '')} {asn['name']}")
+                loc = result.get("location", {})
+                if loc.get("country"):
+                    city = loc.get("city", "")
+                    lines.append(f"Location: {f'{city}, ' if city else ''}{loc['country']}")
+                os_info = result.get("operating_system", {}).get("product")
+                if os_info:
+                    lines.append(f"OS: {os_info}")
+                rdns = result.get("dns", {}).get("reverse_dns", {}).get("names", [])
+                if rdns:
+                    lines.append(f"Reverse DNS: {', '.join(rdns[:5])}")
+                services = result.get("services", [])
+                if services:
+                    lines.append(f"\nServices ({len(services)}):")
+                    for s in services[:20]:
+                        port = s.get("port", "?")
+                        proto = s.get("transport_protocol", "tcp")
+                        name = s.get("service_name", "")
+                        ext = s.get("extended_service_name", "")
+                        sw = s.get("software", [])
+                        sw_str = ", ".join(
+                            f"{x.get('product', '')} {x.get('version', '')}".strip()
+                            for x in sw[:2] if isinstance(x, dict)
+                        ) if sw else ""
+                        line = f"  {port}/{proto}"
+                        disp_name = ext or name
+                        if disp_name:
+                            line += f"  {disp_name}"
+                        if sw_str:
+                            line += f"  ({sw_str})"
+                        tls = s.get("tls", {})
+                        if isinstance(tls, dict) and tls.get("certificates", {}).get("leaf_data", {}).get("subject_dn"):
+                            cert = tls["certificates"]["leaf_data"]
+                            cn = cert.get("subject", {}).get("common_name", [""])
+                            cn_str = cn[0] if isinstance(cn, list) and cn else str(cn)
+                            line += f"  [TLS: {cn_str}]"
+                        lines.append(line)
+                return "\n".join(lines)
+
+            except httpx.HTTPStatusError as e:
+                return _osint_http_error("Censys", e)
+            except Exception as e:
+                logger.error(f"Censys {action} failed: {e}")
+                return f"Censys error: {str(e)}"
+
+        logger.info("Censys OSINT tool configured (2 actions)")
+        return censys
+
+
+class FofaToolManager:
+    """FOFA cyberspace search engine — asset discovery by banner, cert, domain."""
+
+    API_BASE = "https://fofa.info/api/v1"
+
+    def __init__(self, api_key: str = ''):
+        self.api_key = api_key
+        self.key_rotator = None
+
+    def get_tool(self) -> Optional[callable]:
+        if not self.api_key:
+            logger.warning("FOFA API key not configured - fofa tool unavailable.")
+            return None
+        manager = self
+
+        @tool
+        async def fofa(query: str) -> str:
+            """
+            FOFA cyberspace search engine for asset discovery.
+
+            Searches by banner content, certificate, domain, IP, header, protocol, etc.
+            Query examples: 'domain="example.com"', 'ip="1.2.3.4"', 'header="Apache"',
+                           'cert="example.com"', 'port="8443"', 'protocol="https"'
+
+            Args:
+                query: FOFA query string (will be base64-encoded automatically)
+
+            Returns:
+                Formatted host/service results
+            """
+            import base64
+            api_key = manager.key_rotator.current_key if manager.key_rotator and manager.key_rotator.has_keys else manager.api_key
+            encoded_q = base64.b64encode(query.encode()).decode()
+            fields = "ip,port,host,title,server,protocol,country,city,as_organization"
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    resp = await client.get(
+                        f"{manager.API_BASE}/search/all",
+                        params={"key": api_key, "qbase64": encoded_q,
+                                "fields": fields, "size": 50},
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                if manager.key_rotator:
+                    manager.key_rotator.tick()
+                if data.get("error"):
+                    return f"FOFA error: {data.get('errmsg', 'Unknown error')}"
+                results = data.get("results", [])
+                total = data.get("size", 0)
+                if not results:
+                    return f"No FOFA results for: {query}"
+                field_names = fields.split(",")
+                lines = [f"FOFA search: {total} results (showing {len(results)})"]
+                for i, row in enumerate(results[:50], 1):
+                    parts = []
+                    if isinstance(row, list):
+                        for j, val in enumerate(row):
+                            if val and j < len(field_names):
+                                parts.append(f"{field_names[j]}={val}")
+                    else:
+                        parts.append(str(row))
+                    lines.append(f"[{i}] {' | '.join(parts)}")
+                return "\n".join(lines)
+            except httpx.HTTPStatusError as e:
+                return _osint_http_error("FOFA", e)
+            except Exception as e:
+                logger.error(f"FOFA search failed: {e}")
+                return f"FOFA error: {str(e)}"
+
+        logger.info("FOFA search tool configured")
+        return fofa
+
+
+class OtxToolManager:
+    """AlienVault OTX — open threat exchange for IP/domain threat intelligence."""
+
+    API_BASE = "https://otx.alienvault.com/api/v1"
+
+    def __init__(self, api_key: str = ''):
+        self.api_key = api_key
+        self.key_rotator = None
+
+    def get_tool(self) -> Optional[callable]:
+        # Allow anonymous requests (OTX API v1 works without a key at reduced rate)
+        manager = self
+
+        @tool
+        async def otx(action: str, ip: str = "", domain: str = "") -> str:
+            """
+            AlienVault OTX threat intelligence lookup.
+
+            Actions:
+            - ip_report: Threat intel for an IP (pulses, adversary, malware samples, passive DNS, reputation, geo)
+            - domain_report: Threat intel for a domain (pulses, adversary, malware samples, WHOIS, historical IPs)
+
+            Args:
+                action: "ip_report" or "domain_report"
+                ip: Target IP address (for ip_report)
+                domain: Target domain (for domain_report)
+
+            Returns:
+                Threat intelligence summary from OTX
+            """
+            api_key = manager.key_rotator.current_key if manager.key_rotator and manager.key_rotator.has_keys else manager.api_key
+            headers = {"X-OTX-API-KEY": api_key} if api_key else {}
+            try:
+                async with httpx.AsyncClient(timeout=30.0, headers=headers) as client:
+                    if action == "ip_report":
+                        if not ip:
+                            return "Error: 'ip' required for action='ip_report'"
+                        gen = await client.get(f"{manager.API_BASE}/indicators/IPv4/{ip}/general")
+                        gen.raise_for_status()
+                        data = gen.json()
+                        lines = [f"OTX IP Report: {ip}"]
+                        pulses = data.get("pulse_info", {}).get("count", 0)
+                        lines.append(f"Threat Pulses: {pulses}")
+                        rep = data.get("reputation", None)
+                        if rep is not None:
+                            lines.append(f"Reputation: {rep}")
+                        geo = data.get("geo", {}) or {}
+                        if geo.get("country_name"):
+                            city = geo.get("city", "")
+                            loc_str = f"{city}, {geo['country_name']}" if city else geo["country_name"]
+                            lines.append(f"Location: {loc_str}")
+                        if geo.get("asn"):
+                            lines.append(f"ASN: {geo['asn']}")
+                        # Pulse details: adversaries, malware families, attack IDs
+                        pulse_refs = data.get("pulse_info", {}).get("pulses", [])
+                        if pulse_refs:
+                            adversaries = sorted({p.get("adversary", "").strip() for p in pulse_refs if p.get("adversary", "").strip()})
+                            if adversaries:
+                                lines.append(f"Adversaries: {', '.join(adversaries[:5])}")
+                            mf_set: set[str] = set()
+                            for p in pulse_refs:
+                                for mf in p.get("malware_families") or []:
+                                    name = (mf.get("display_name") or mf.get("id") or "") if isinstance(mf, dict) else str(mf)
+                                    if name:
+                                        mf_set.add(name.strip())
+                            if mf_set:
+                                lines.append(f"Malware Families: {', '.join(sorted(mf_set)[:5])}")
+                            tlp_vals = {(p.get("TLP") or p.get("tlp") or "").lower().strip() for p in pulse_refs if p.get("TLP") or p.get("tlp")}
+                            if tlp_vals:
+                                lines.append(f"TLP values seen: {', '.join(sorted(tlp_vals))}")
+                            lines.append(f"\nTop Pulses ({min(len(pulse_refs), 5)}):")
+                            for p in pulse_refs[:5]:
+                                name = p.get("name", "")
+                                adv = p.get("adversary", "")
+                                tags = ", ".join(p.get("tags", [])[:4])
+                                detail = f"  - {name}"
+                                if adv:
+                                    detail += f"  [adversary: {adv}]"
+                                if tags:
+                                    detail += f"  tags=[{tags}]"
+                                lines.append(detail)
+                        # Malware samples
+                        try:
+                            ml_resp = await client.get(f"{manager.API_BASE}/indicators/IPv4/{ip}/malware")
+                            if ml_resp.status_code == 200:
+                                ml_data = ml_resp.json().get("data") or []
+                                if ml_data:
+                                    lines.append(f"\nMalware Samples ({len(ml_data)} total, showing top 5):")
+                                    for s in ml_data[:5]:
+                                        h = s.get("hash") or s.get("sha256") or s.get("md5") or "?"
+                                        ft = s.get("type") or s.get("file_class") or ""
+                                        fn = s.get("file_name") or ""
+                                        lines.append(f"  - {h[:20]}...  type={ft}  name={fn}")
+                        except Exception:
+                            pass
+
+                    elif action == "domain_report":
+                        if not domain:
+                            return "Error: 'domain' required for action='domain_report'"
+                        gen = await client.get(f"{manager.API_BASE}/indicators/domain/{domain}/general")
+                        gen.raise_for_status()
+                        data = gen.json()
+                        lines = [f"OTX Domain Report: {domain}"]
+                        pulses = data.get("pulse_info", {}).get("count", 0)
+                        lines.append(f"Threat Pulses: {pulses}")
+                        whois = data.get("whois", {}) or {}
+                        if whois.get("registrant"):
+                            lines.append(f"Registrant: {whois['registrant']}")
+                        # Pulse details
+                        pulse_refs = data.get("pulse_info", {}).get("pulses", [])
+                        if pulse_refs:
+                            adversaries = sorted({p.get("adversary", "").strip() for p in pulse_refs if p.get("adversary", "").strip()})
+                            if adversaries:
+                                lines.append(f"Adversaries: {', '.join(adversaries[:5])}")
+                            mf_set_d: set[str] = set()
+                            for p in pulse_refs:
+                                for mf in p.get("malware_families") or []:
+                                    name = (mf.get("display_name") or mf.get("id") or "") if isinstance(mf, dict) else str(mf)
+                                    if name:
+                                        mf_set_d.add(name.strip())
+                            if mf_set_d:
+                                lines.append(f"Malware Families: {', '.join(sorted(mf_set_d)[:5])}")
+                            lines.append(f"\nTop Pulses ({min(len(pulse_refs), 5)}):")
+                            for p in pulse_refs[:5]:
+                                name = p.get("name", "")
+                                adv = p.get("adversary", "")
+                                tags = ", ".join(p.get("tags", [])[:4])
+                                detail = f"  - {name}"
+                                if adv:
+                                    detail += f"  [adversary: {adv}]"
+                                if tags:
+                                    detail += f"  tags=[{tags}]"
+                                lines.append(detail)
+                        # Malware samples
+                        try:
+                            ml_resp = await client.get(f"{manager.API_BASE}/indicators/domain/{domain}/malware")
+                            if ml_resp.status_code == 200:
+                                ml_data = ml_resp.json().get("data") or []
+                                if ml_data:
+                                    lines.append(f"\nMalware Samples ({len(ml_data)} total, showing top 5):")
+                                    for s in ml_data[:5]:
+                                        h = s.get("hash") or s.get("sha256") or s.get("md5") or "?"
+                                        ft = s.get("type") or s.get("file_class") or ""
+                                        fn = s.get("file_name") or ""
+                                        lines.append(f"  - {h[:20]}...  type={ft}  name={fn}")
+                        except Exception:
+                            pass
+                        # Historical IPs (domain passive_dns)
+                        try:
+                            dpd_resp = await client.get(f"{manager.API_BASE}/indicators/domain/{domain}/passive_dns")
+                            if dpd_resp.status_code == 200:
+                                hist_records = dpd_resp.json().get("passive_dns") or []
+                                if hist_records:
+                                    lines.append(f"\nHistorical IPs ({len(hist_records)} records, showing top 5):")
+                                    for r in hist_records[:5]:
+                                        addr = r.get("address") or r.get("hostname") or "?"
+                                        last = r.get("last") or ""
+                                        lines.append(f"  - {addr}  last={last[:10] if last else '?'}")
+                        except Exception:
+                            pass
+                    else:
+                        return f"Error: Unknown action '{action}'. Valid: ip_report, domain_report"
+                if manager.key_rotator:
+                    manager.key_rotator.tick()
+                return "\n".join(lines)
+            except httpx.HTTPStatusError as e:
+                return _osint_http_error("OTX", e)
+            except Exception as e:
+                logger.error(f"OTX {action} failed: {e}")
+                return f"OTX error: {str(e)}"
+
+        key_mode = "authenticated" if (self.api_key or (self.key_rotator and getattr(self.key_rotator, "has_keys", False))) else "anonymous"
+        logger.info(f"OTX threat intelligence tool configured (2 actions, {key_mode})")
+        return otx
+
+
+class NetlasToolManager:
+    """Netlas.io — internet-wide scan data with banner, certificate, and WHOIS info."""
+
+    API_BASE = "https://app.netlas.io/api"
+
+    def __init__(self, api_key: str = ''):
+        self.api_key = api_key
+        self.key_rotator = None
+
+    def get_tool(self) -> Optional[callable]:
+        if not self.api_key:
+            logger.warning("Netlas API key not configured - netlas tool unavailable.")
+            return None
+        manager = self
+
+        @tool
+        async def netlas(action: str, query: str = "", ip: str = "") -> str:
+            """
+            Netlas.io internet intelligence search.
+
+            Actions:
+            - search: Search responses index (e.g. 'host:example.com', 'port:443 AND certificate.issuer:Let')
+            - host: Get aggregated host info for an IP
+
+            Args:
+                action: "search" or "host"
+                query: Netlas query string (for search)
+                ip: Target IP address (for host)
+
+            Returns:
+                Service banners, certificates, and host details
+            """
+            api_key = manager.key_rotator.current_key if manager.key_rotator and manager.key_rotator.has_keys else manager.api_key
+            headers = {"X-API-Key": api_key}
+            try:
+                async with httpx.AsyncClient(timeout=30.0, headers=headers) as client:
+                    if action == "search":
+                        if not query:
+                            return "Error: 'query' required for action='search'"
+                        resp = await client.get(
+                            f"{manager.API_BASE}/responses/",
+                            params={"q": query, "start": 0, "indices": ""},
+                        )
+                    elif action == "host":
+                        if not ip:
+                            return "Error: 'ip' required for action='host'"
+                        resp = await client.get(f"{manager.API_BASE}/host/{ip}/")
+                    else:
+                        return f"Error: Unknown action '{action}'. Valid: search, host"
+                    resp.raise_for_status()
+                    data = resp.json()
+                if manager.key_rotator:
+                    manager.key_rotator.tick()
+
+                if action == "search":
+                    items = data.get("items", [])
+                    total = data.get("count", 0)
+                    if not items:
+                        return f"No Netlas results for: {query}"
+                    lines = [f"Netlas search: {total} results (showing {len(items)})"]
+                    for i, item in enumerate(items[:25], 1):
+                        d = item.get("data", {})
+                        host = d.get("host", d.get("ip", "?"))
+                        port = d.get("port", "?")
+                        proto = d.get("protocol", "")
+                        title = d.get("http", {}).get("title", "") if isinstance(d.get("http"), dict) else ""
+                        geo_country = d.get("geo", {}).get("country", "") if isinstance(d.get("geo"), dict) else ""
+                        line = f"[{i}] {host}:{port}"
+                        if proto:
+                            line += f" ({proto})"
+                        if title:
+                            line += f"  title={title[:60]}"
+                        if geo_country:
+                            line += f"  country={geo_country}"
+                        lines.append(line)
+                    return "\n".join(lines)
+
+                # action == "host"
+                lines = [f"Netlas Host: {ip}"]
+                if isinstance(data, dict):
+                    for key in ("country", "isp", "whois"):
+                        if data.get(key):
+                            lines.append(f"{key}: {data[key]}")
+                return "\n".join(lines)
+
+            except httpx.HTTPStatusError as e:
+                return _osint_http_error("Netlas", e)
+            except Exception as e:
+                logger.error(f"Netlas {action} failed: {e}")
+                return f"Netlas error: {str(e)}"
+
+        logger.info("Netlas search tool configured (2 actions)")
+        return netlas
+
+
+class VirusTotalToolManager:
+    """VirusTotal — multi-engine malware/URL reputation for domains and IPs."""
+
+    API_BASE = "https://www.virustotal.com/api/v3"
+
+    def __init__(self, api_key: str = ''):
+        self.api_key = api_key
+        self.key_rotator = None
+
+    def get_tool(self) -> Optional[callable]:
+        if not self.api_key:
+            logger.warning("VirusTotal API key not configured - virustotal tool unavailable.")
+            return None
+        manager = self
+
+        @tool
+        async def virustotal(action: str, ip: str = "", domain: str = "") -> str:
+            """
+            VirusTotal reputation lookup for IPs and domains.
+
+            Free-tier limits: 4 lookups/min, 500/day.
+
+            Actions:
+            - ip_report: Reputation and detections for an IP
+            - domain_report: Reputation, subdomains, and detections for a domain
+
+            Args:
+                action: "ip_report" or "domain_report"
+                ip: Target IP address
+                domain: Target domain
+
+            Returns:
+                Reputation scores and detection summary
+            """
+            api_key = manager.key_rotator.current_key if manager.key_rotator and manager.key_rotator.has_keys else manager.api_key
+            headers = {"x-apikey": api_key}
+            try:
+                async with httpx.AsyncClient(timeout=30.0, headers=headers) as client:
+                    if action == "ip_report":
+                        if not ip:
+                            return "Error: 'ip' required for action='ip_report'"
+                        resp = await client.get(f"{manager.API_BASE}/ip_addresses/{ip}")
+                    elif action == "domain_report":
+                        if not domain:
+                            return "Error: 'domain' required for action='domain_report'"
+                        resp = await client.get(f"{manager.API_BASE}/domains/{domain}")
+                    else:
+                        return f"Error: Unknown action '{action}'. Valid: ip_report, domain_report"
+                    resp.raise_for_status()
+                    data = resp.json()
+                if manager.key_rotator:
+                    manager.key_rotator.tick()
+
+                attrs = data.get("data", {}).get("attributes", {})
+                target = ip if action == "ip_report" else domain
+                lines = [f"VirusTotal {'IP' if action == 'ip_report' else 'Domain'} Report: {target}"]
+
+                rep = attrs.get("reputation", "N/A")
+                lines.append(f"Reputation score: {rep}")
+
+                stats = attrs.get("last_analysis_stats", {})
+                if stats:
+                    mal = stats.get("malicious", 0)
+                    sus = stats.get("suspicious", 0)
+                    clean = stats.get("harmless", 0)
+                    undetected = stats.get("undetected", 0)
+                    lines.append(f"Detections: malicious={mal}, suspicious={sus}, clean={clean}, undetected={undetected}")
+
+                if action == "ip_report":
+                    asn = attrs.get("asn", "")
+                    as_owner = attrs.get("as_owner", "")
+                    country = attrs.get("country", "")
+                    if asn:
+                        lines.append(f"ASN: {asn} ({as_owner})")
+                    if country:
+                        lines.append(f"Country: {country}")
+                else:
+                    cats = attrs.get("categories", {})
+                    if cats:
+                        lines.append(f"Categories: {', '.join(set(cats.values()))}")
+                    pop = attrs.get("popularity_ranks", {})
+                    if pop:
+                        ranks = [f"{k}: #{v.get('rank', '?')}" for k, v in list(pop.items())[:5]]
+                        lines.append(f"Popularity: {', '.join(ranks)}")
+                    registrar = attrs.get("registrar", "")
+                    if registrar:
+                        lines.append(f"Registrar: {registrar}")
+
+                return "\n".join(lines)
+
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429:
+                    return "VirusTotal error: Rate limit exceeded (free tier: 4 req/min, 500/day). Wait and retry."
+                return _osint_http_error("VirusTotal", e)
+            except Exception as e:
+                logger.error(f"VirusTotal {action} failed: {e}")
+                return f"VirusTotal error: {str(e)}"
+
+        logger.info("VirusTotal reputation tool configured (2 actions)")
+        return virustotal
+
+
+class ZoomEyeToolManager:
+    """ZoomEye — cyberspace search engine for host/service/device discovery."""
+
+    API_BASE = "https://api.zoomeye.ai"
+
+    def __init__(self, api_key: str = ''):
+        self.api_key = api_key
+        self.key_rotator = None
+
+    def get_tool(self) -> Optional[callable]:
+        if not self.api_key:
+            logger.warning("ZoomEye API key not configured - zoomeye tool unavailable.")
+            return None
+        manager = self
+
+        @tool
+        async def zoomeye(query: str) -> str:
+            """
+            ZoomEye cyberspace search engine for host/device discovery.
+
+            Query examples: 'ip:"1.2.3.4"', 'hostname:"example.com"', 'port:8080',
+                           'app:"Apache"', 'os:"Linux"', 'country:"US"'
+
+            Args:
+                query: ZoomEye search query (dork)
+
+            Returns:
+                Host/service results with ports, banners, and geo info
+            """
+            api_key = manager.key_rotator.current_key if manager.key_rotator and manager.key_rotator.has_keys else manager.api_key
+            headers = {"API-KEY": api_key}
+            try:
+                async with httpx.AsyncClient(timeout=30.0, headers=headers) as client:
+                    resp = await client.get(
+                        f"{manager.API_BASE}/host/search",
+                        params={"query": query, "page": 1},
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                if manager.key_rotator:
+                    manager.key_rotator.tick()
+
+                total = data.get("total", 0)
+                matches = data.get("matches", [])
+                if not matches:
+                    return f"No ZoomEye results for: {query}"
+                lines = [f"ZoomEye search: {total} hosts (showing {len(matches)})"]
+                for i, m in enumerate(matches[:25], 1):
+                    ip_addr = m.get("ip", "?")
+                    port_info = m.get("portinfo", {})
+                    port = port_info.get("port", "?") if isinstance(port_info, dict) else "?"
+                    app = port_info.get("app", "") if isinstance(port_info, dict) else ""
+                    banner = (port_info.get("banner", "") if isinstance(port_info, dict) else "")[:100]
+                    geo = m.get("geoinfo", {})
+                    country = geo.get("country", {}).get("names", {}).get("en", "") if isinstance(geo.get("country"), dict) else ""
+                    os_info = port_info.get("os", "") if isinstance(port_info, dict) else ""
+                    line = f"[{i}] {ip_addr}:{port}"
+                    if app:
+                        line += f"  app={app}"
+                    if os_info:
+                        line += f"  os={os_info}"
+                    if country:
+                        line += f"  country={country}"
+                    if banner:
+                        line += f"  banner={banner.replace(chr(10), ' ')}"
+                    lines.append(line)
+                return "\n".join(lines)
+
+            except httpx.HTTPStatusError as e:
+                return _osint_http_error("ZoomEye", e)
+            except Exception as e:
+                logger.error(f"ZoomEye search failed: {e}")
+                return f"ZoomEye error: {str(e)}"
+
+        logger.info("ZoomEye search tool configured")
+        return zoomeye
+
+
+class CriminalIpToolManager:
+    """Criminal IP — AI-powered cyber threat intelligence for IP/domain risk scoring."""
+
+    API_BASE = "https://api.criminalip.io/v1"
+
+    def __init__(self, api_key: str = ''):
+        self.api_key = api_key
+        self.key_rotator = None
+
+    def get_tool(self) -> Optional[callable]:
+        if not self.api_key:
+            logger.warning("Criminal IP API key not configured - criminalip tool unavailable.")
+            return None
+        manager = self
+
+        @tool
+        async def criminalip(action: str, ip: str = "", domain: str = "") -> str:
+            """
+            Criminal IP threat intelligence lookup for IPs and domains.
+
+            Actions:
+            - ip_report: Risk score, open ports, issues (VPN/proxy/tor), vulnerabilities for an IP
+            - domain_report: Risk assessment and technology detection for a domain
+
+            Args:
+                action: "ip_report" or "domain_report"
+                ip: Target IP address
+                domain: Target domain
+
+            Returns:
+                Risk scores, detected issues, and vulnerability summary
+            """
+            api_key = manager.key_rotator.current_key if manager.key_rotator and manager.key_rotator.has_keys else manager.api_key
+            headers = {"x-api-key": api_key}
+            try:
+                async with httpx.AsyncClient(timeout=30.0, headers=headers) as client:
+                    if action == "ip_report":
+                        if not ip:
+                            return "Error: 'ip' required for action='ip_report'"
+                        resp = await client.get(f"{manager.API_BASE}/ip/data", params={"ip": ip})
+                    elif action == "domain_report":
+                        if not domain:
+                            return "Error: 'domain' required for action='domain_report'"
+                        resp = await client.get(f"{manager.API_BASE}/domain/report", params={"query": domain})
+                    else:
+                        return f"Error: Unknown action '{action}'. Valid: ip_report, domain_report"
+                    resp.raise_for_status()
+                    data = resp.json()
+                if manager.key_rotator:
+                    manager.key_rotator.tick()
+
+                if action == "ip_report":
+                    lines = [f"Criminal IP Report: {ip}"]
+                    score = data.get("score", {})
+                    if isinstance(score, dict):
+                        inbound = score.get("inbound", "N/A")
+                        outbound = score.get("outbound", "N/A")
+                        lines.append(f"Risk Score: inbound={inbound}, outbound={outbound}")
+                    issues = data.get("issues", {})
+                    if isinstance(issues, dict):
+                        flags = [k for k, v in issues.items() if v]
+                        if flags:
+                            lines.append(f"Issues: {', '.join(flags)}")
+                    whois = data.get("whois", {})
+                    if isinstance(whois, dict):
+                        org = whois.get("org_name", "")
+                        country = whois.get("org_country_code", "")
+                        if org:
+                            lines.append(f"Organization: {org}")
+                        if country:
+                            lines.append(f"Country: {country}")
+                    ports = data.get("port", [])
+                    if isinstance(ports, list) and ports:
+                        open_ports = [str(p.get("open_port_no", "?")) for p in ports[:20] if isinstance(p, dict)]
+                        lines.append(f"Open ports ({len(ports)}): {', '.join(open_ports)}")
+                    return "\n".join(lines)
+
+                # domain_report
+                lines = [f"Criminal IP Domain Report: {domain}"]
+                if isinstance(data, dict):
+                    main_info = data.get("data", data)
+                    if isinstance(main_info, dict):
+                        for key in ("risk_score", "is_malicious", "technologies"):
+                            val = main_info.get(key)
+                            if val is not None:
+                                lines.append(f"{key}: {val}")
+                return "\n".join(lines)
+
+            except httpx.HTTPStatusError as e:
+                return _osint_http_error("Criminal IP", e)
+            except Exception as e:
+                logger.error(f"Criminal IP {action} failed: {e}")
+                return f"Criminal IP error: {str(e)}"
+
+        logger.info("Criminal IP threat intelligence tool configured (2 actions)")
+        return criminalip
+
+
+# =============================================================================
+# CLAUDE CODE TOOL MANAGER
+# =============================================================================
+
+class ClaudeCodeToolManager:
+    """
+    Manages Claude Code integration via a lightweight host proxy.
+
+    The agent container calls the RedAmon Claude Code Proxy
+    (claude_proxy/server.py) running on the host at host.docker.internal:8099.
+    The proxy invokes the host's `claude --print` binary which is already
+    authenticated via the user's existing Claude Code session (macOS Keychain
+    OAuth). No API key or in-container login is required.
+    """
+
+    def __init__(self, proxy_url: str = None):
+        default = os.environ.get(
+            'CLAUDE_PROXY_URL',
+            'http://host.docker.internal:8099'
+        )
+        self.proxy_url = (proxy_url or default).rstrip('/')
+
+    def _proxy_reachable(self) -> bool:
+        """Quick synchronous check that the proxy health endpoint responds."""
+        try:
+            import urllib.request
+            with urllib.request.urlopen(f"{self.proxy_url}/health", timeout=3) as r:
+                return r.status == 200
+        except Exception:
+            return False
+
+    def get_tool(self) -> Optional[callable]:
+        """
+        Return the claude_code LangChain tool.
+
+        Returns None if the Claude Code proxy is not reachable, logging a
+        clear startup hint so operators can fix it easily.
+        """
+        if not self._proxy_reachable():
+            logger.warning(
+                f"Claude Code proxy not reachable at '{self.proxy_url}/health'. "
+                "Start it with: ./redamon.sh start-claude-proxy  "
+                "(or: python3 claude_proxy/server.py)"
+            )
+            return None
+
+        manager = self
+
+        @tool
+        async def claude_code(task: str, working_directory: str = '/tmp') -> str:
+            """
+            Execute a code analysis or security review task using Claude Code.
+
+            This tool delegates to the Claude Code CLI running on the host via
+            the RedAmon Claude Code Proxy. It uses the host's existing Claude
+            Code login session — no API key configuration in RedAmon is needed.
+
+            Use this tool to:
+            - Analyze source code files for security vulnerabilities (SQLi, XSS, SSRF, RCE, etc.)
+            - Hunt for hardcoded credentials, API keys, and tokens inside discovered repositories
+            - Review configuration files and IaC templates for misconfigurations
+            - Examine JavaScript/TypeScript bundles for exposed secrets or internal API endpoints
+            - Generate a security-focused summary of an application's attack surface from its code
+            - Investigate post-exploitation artifacts (scripts, configs) left on compromised hosts
+
+            Args:
+                task: Clear description of the analysis or review task to perform.
+                working_directory: Absolute path to the directory containing code to analyze.
+                                   Defaults to /tmp. Must already exist on the filesystem.
+
+            Returns:
+                Claude Code's full analysis output, findings, and recommendations.
+            """
+            import httpx
+
+            payload = {"task": task, "working_directory": working_directory}
+            logger.info(
+                f"Forwarding claude_code task to proxy at {manager.proxy_url} "
+                f"(dir: {working_directory}, task length: {len(task)} chars)"
+            )
+
+            try:
+                async with httpx.AsyncClient(timeout=320) as client:
+                    resp = await client.post(f"{manager.proxy_url}/claude", json=payload)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    return data.get("output", "Claude Code returned no output.")
+
+            except httpx.ConnectError:
+                return (
+                    f"Error: Claude Code proxy is not running at '{manager.proxy_url}'. "
+                    "Start it with: ./redamon.sh start-claude-proxy"
+                )
+            except httpx.TimeoutException:
+                return "Error: Claude Code proxy timed out after 320 seconds."
+            except Exception as e:
+                logger.error(f"Claude Code proxy call failed: {e}")
+                return f"Error calling Claude Code proxy: {e}"
+
+        return claude_code
+
+
+# =============================================================================
 # PHASE-AWARE TOOL EXECUTOR
 # =============================================================================
 
@@ -1013,6 +1886,8 @@ class PhaseAwareToolExecutor:
         web_search_tool: Optional[callable] = None,
         shodan_tool: Optional[callable] = None,
         google_dork_tool: Optional[callable] = None,
+        osint_tools: Optional[Dict[str, callable]] = None,
+        claude_code_tool: Optional[callable] = None,
     ):
         self.mcp_manager = mcp_manager
         self.graph_tool = graph_tool
@@ -1034,6 +1909,16 @@ class PhaseAwareToolExecutor:
         # Register Google dork tool
         if google_dork_tool:
             self._all_tools["google_dork"] = google_dork_tool
+
+        # Register additional OSINT tools (censys, fofa, otx, netlas, virustotal, zoomeye, criminalip)
+        if osint_tools:
+            for name, t in osint_tools.items():
+                if t is not None:
+                    self._all_tools[name] = t
+
+        # Register Claude Code tool
+        if claude_code_tool:
+            self._all_tools["claude_code"] = claude_code_tool
 
     def register_mcp_tools(self, tools: List) -> None:
         """Register MCP tools after they're loaded."""
@@ -1060,6 +1945,20 @@ class PhaseAwareToolExecutor:
             self._all_tools["google_dork"] = tool
         else:
             self._all_tools.pop("google_dork", None)
+
+    def update_osint_tool(self, name: str, tool: Optional[callable]) -> None:
+        """Replace or remove an OSINT tool by name."""
+        if tool:
+            self._all_tools[name] = tool
+        else:
+            self._all_tools.pop(name, None)
+
+    def update_claude_code_tool(self, tool: Optional[callable]) -> None:
+        """Replace or remove the Claude Code tool (e.g. when enabled/disabled in project settings)."""
+        if tool:
+            self._all_tools["claude_code"] = tool
+        else:
+            self._all_tools.pop("claude_code", None)
 
     def _extract_text_from_output(self, output) -> str:
         """

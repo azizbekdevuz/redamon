@@ -750,6 +750,16 @@ export default function SettingsPage() {
               onChange={v => updateSetting('censysOrgId', v)}
             />
             <SecretField
+              label="Censys Personal API Token"
+              hint="Personal Access Token from your Censys account — alternative to API ID + Secret. Takes precedence when both are set."
+              signupUrl="https://accounts.censys.io/settings/personal-access-tokens"
+              badges={['AI Agent', 'Recon Pipeline']}
+              value={settings.censysApiToken}
+              visible={!!visibleFields.censysApiToken}
+              onToggle={() => toggleFieldVisibility('censysApiToken')}
+              onChange={v => updateSetting('censysApiToken', v)}
+            />
+            <SecretField
               label="FOFA API Key"
               hint="FOFA cyberspace search — asset discovery by banner, certificate, domain. Key format: email:key"
               signupUrl="https://en.fofa.info/"

@@ -27,6 +27,7 @@ from orchestrator_helpers.json_utils import json_dumps_safe, normalize_content
 from orchestrator_helpers.parsing import try_parse_llm_decision
 from orchestrator_helpers.config import get_identifiers, is_session_config_complete
 from project_settings import get_setting, get_allowed_tools_for_phase, DANGEROUS_TOOLS
+from skill_loader import build_skills_prompt_section
 from prompts import (
     REACT_SYSTEM_PROMPT,
     PENDING_OUTPUT_ANALYSIS_SECTION,
@@ -297,6 +298,14 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
                 "IMPORTANT: Inform the user about these warnings before proceeding. "
                 "If the engagement has ended, do NOT perform any active testing."
             )
+
+    # Infosec-skills-compatible skill injection
+    agent_skills = get_setting('AGENT_SKILLS', [])
+    if agent_skills:
+        skills_section = build_skills_prompt_section(agent_skills)
+        if skills_section:
+            system_prompt += skills_section
+            logger.info(f"[{user_id}/{project_id}/{session_id}] Injected {len(agent_skills)} skill(s) into prompt")
 
     # Failure loop detection: if 3+ consecutive similar failures, inject warning
     exec_trace = state.get("execution_trace", [])

@@ -61,6 +61,7 @@ export const PROVIDER_TYPES = [
   { id: 'openrouter', name: 'OpenRouter', description: 'Access 200+ models via OpenRouter', icon: '🔵' },
   { id: 'bedrock', name: 'AWS Bedrock', description: 'AWS Bedrock foundation models', icon: '🟡' },
   { id: 'openai_compatible', name: 'OpenAI-Compatible', description: 'Any OpenAI-compatible endpoint (Ollama, vLLM, Groq, etc.)', icon: '⚙️' },
+  { id: 'claude_code', name: 'Claude Code', description: 'Use Claude models via Claude Code login — no API key needed', icon: '🤖' },
 ] as const
 
 export type ProviderType = typeof PROVIDER_TYPES[number]['id']

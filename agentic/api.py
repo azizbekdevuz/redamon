@@ -506,6 +506,23 @@ async def get_models(providers: str = Query(default="", description="JSON-encode
 
 
 # =============================================================================
+# SKILLS — Infosec-skills-compatible skill catalog endpoint
+# =============================================================================
+
+@app.get("/skills", tags=["System"])
+async def list_skills():
+    """
+    Return the catalog of all available Infosec-skills-compatible skills.
+
+    Each entry contains: id, name, description, category.
+    The frontend uses this to populate the skill selector in Project Settings.
+    """
+    from skill_loader import list_skills as _list_skills
+    skills = _list_skills()
+    return {"skills": skills, "total": len(skills)}
+
+
+# =============================================================================
 # LLM PROVIDER TEST — test a provider config with a simple message
 # =============================================================================
 
@@ -565,6 +582,18 @@ async def test_llm_provider(body: LlmProviderTestRequest):
                 kwargs["http_client"] = httpx.Client(verify=False)
                 kwargs["http_async_client"] = httpx.AsyncClient(verify=False)
             llm = ChatOpenAI(**kwargs)
+        elif ptype == "claude_code":
+            from langchain_openai import ChatOpenAI
+            proxy_base = (body.baseUrl or "http://host.docker.internal:8099").rstrip("/")
+            if not proxy_base.endswith("/v1"):
+                proxy_base = proxy_base + "/v1"
+            llm = ChatOpenAI(
+                model=body.modelIdentifier or "claude-code/claude-sonnet-4-6",
+                api_key="claude-code",
+                base_url=proxy_base,
+                temperature=body.temperature,
+                max_tokens=body.maxTokens,
+            )
         else:
             return JSONResponse(
                 content={"success": False, "error": f"Unknown provider type: {ptype}"},

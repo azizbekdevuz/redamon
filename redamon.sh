@@ -508,6 +508,56 @@ cmd_help() {
 
 cd "$SCRIPT_DIR"
 
+cmd_start_claude_proxy() {
+    local port="${CLAUDE_PROXY_PORT:-8099}"
+    local pid_file="/tmp/redamon-claude-proxy.pid"
+
+    if [[ -f "$pid_file" ]] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then
+        info "Claude Code proxy is already running (PID $(cat "$pid_file")) on port ${port}"
+        return 0
+    fi
+
+    if ! command -v python3 &>/dev/null; then
+        error "python3 not found. Install Python 3 to run the Claude Code proxy."
+        exit 1
+    fi
+
+    info "Starting Claude Code proxy on port ${port}..."
+    CLAUDE_PROXY_PORT="${port}" python3 "${SCRIPT_DIR}/claude_proxy/server.py" \
+        > /tmp/redamon-claude-proxy.log 2>&1 &
+    echo $! > "$pid_file"
+    sleep 1
+
+    if kill -0 "$(cat "$pid_file")" 2>/dev/null; then
+        success "Claude Code proxy started (PID $(cat "$pid_file")) — http://localhost:${port}/health"
+        info "Logs: tail -f /tmp/redamon-claude-proxy.log"
+    else
+        error "Claude Code proxy failed to start. Check: cat /tmp/redamon-claude-proxy.log"
+        rm -f "$pid_file"
+        exit 1
+    fi
+}
+
+cmd_stop_claude_proxy() {
+    local pid_file="/tmp/redamon-claude-proxy.pid"
+
+    if [[ ! -f "$pid_file" ]]; then
+        info "Claude Code proxy is not running (no PID file found)"
+        return 0
+    fi
+
+    local pid
+    pid=$(cat "$pid_file")
+    if kill -0 "$pid" 2>/dev/null; then
+        kill "$pid"
+        rm -f "$pid_file"
+        success "Claude Code proxy stopped (PID ${pid})"
+    else
+        info "Claude Code proxy was not running (stale PID file removed)"
+        rm -f "$pid_file"
+    fi
+}
+
 case "${1:-help}" in
     install) cmd_install "${2:-}" ;;
     update)  cmd_update ;;
@@ -516,6 +566,8 @@ case "${1:-help}" in
     clean)   cmd_clean ;;
     purge)   cmd_purge ;;
     status)  cmd_status ;;
+    start-claude-proxy) cmd_start_claude_proxy ;;
+    stop-claude-proxy)  cmd_stop_claude_proxy ;;
     help|--help|-h) cmd_help ;;
     *)
         error "Unknown command: $1"

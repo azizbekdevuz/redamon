@@ -64,11 +64,17 @@ export function LlmProviderForm({ userId, provider, onSave, onCancel }: LlmProvi
 
   const selectType = useCallback((type: ProviderType) => {
     const typeDef = PROVIDER_TYPES.find(p => p.id === type)
-    setForm(prev => ({
-      ...prev,
-      providerType: type,
-      name: prev.name || typeDef?.name || type,
-    }))
+    setForm(prev => {
+      const updates: Partial<ProviderData> = {
+        providerType: type,
+        name: prev.name || typeDef?.name || type,
+      }
+      if (type === 'claude_code') {
+        if (!prev.modelIdentifier) updates.modelIdentifier = 'claude-code/claude-opus-4-6'
+        if (!prev.baseUrl) updates.baseUrl = 'http://host.docker.internal:8099'
+      }
+      return { ...prev, ...updates }
+    })
     setStep('config')
   }, [])
 
@@ -171,6 +177,15 @@ export function LlmProviderForm({ userId, provider, onSave, onCancel }: LlmProvi
   const isKeyBased = ['openai', 'anthropic', 'openrouter'].includes(ptype)
   const isBedrock = ptype === 'bedrock'
   const isCompat = ptype === 'openai_compatible'
+  const isClaudeCode = ptype === 'claude_code'
+
+  const CLAUDE_CODE_MODELS = [
+    { id: 'claude-code/claude-opus-4-6', name: 'Claude Opus 4.6 (via Claude Code)' },
+    { id: 'claude-code/claude-sonnet-4-6', name: 'Claude Sonnet 4.6 (via Claude Code)' },
+    { id: 'claude-code/claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5 (via Claude Code)' },
+    { id: 'claude-code/claude-sonnet-4-5-20251001', name: 'Claude Sonnet 4.5 (via Claude Code)' },
+    { id: 'claude-code/claude-opus-4-5-20251101', name: 'Claude Opus 4.5 (via Claude Code)' },
+  ]
 
   return (
     <div className={styles.formSection}>
@@ -246,6 +261,37 @@ export function LlmProviderForm({ userId, provider, onSave, onCancel }: LlmProvi
               value={form.awsSecretKey}
               onChange={e => updateForm('awsSecretKey', e.target.value)}
             />
+          </div>
+        </>
+      )}
+
+      {/* Claude Code */}
+      {isClaudeCode && (
+        <>
+          <div className="formGroup">
+            <label className="formLabel formLabelRequired">Model</label>
+            <select
+              className="select"
+              value={form.modelIdentifier || 'claude-code/claude-opus-4-6'}
+              onChange={e => updateForm('modelIdentifier', e.target.value)}
+            >
+              {CLAUDE_CODE_MODELS.map(m => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+            <span className="formHint">Uses the Claude Code proxy running on the host machine</span>
+          </div>
+          <div className="formGroup">
+            <label className="formLabel">Proxy URL</label>
+            <input
+              className="textInput"
+              value={form.baseUrl || 'http://host.docker.internal:8099'}
+              onChange={e => updateForm('baseUrl', e.target.value)}
+              placeholder="http://host.docker.internal:8099"
+            />
+            <span className="formHint">
+              Start the proxy on the host with: <code>./redamon.sh start-claude-proxy</code>
+            </span>
           </div>
         </>
       )}
@@ -409,7 +455,7 @@ export function LlmProviderForm({ userId, provider, onSave, onCancel }: LlmProvi
         <button
           className="primaryButton"
           onClick={handleSave}
-          disabled={saving || !form.name || (!isCompat && !form.apiKey && !isBedrock) || (isBedrock && (!form.awsAccessKeyId || !form.awsSecretKey)) || (isCompat && (!form.baseUrl || !form.modelIdentifier))}
+          disabled={saving || !form.name || (!isCompat && !isClaudeCode && !form.apiKey && !isBedrock) || (isBedrock && (!form.awsAccessKeyId || !form.awsSecretKey)) || (isCompat && (!form.baseUrl || !form.modelIdentifier)) || (isClaudeCode && !form.modelIdentifier)}
         >
           {saving ? <Loader2 size={14} className={styles.spin} /> : null}
           {isEditing ? 'Update' : 'Save'} Provider

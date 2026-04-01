@@ -33,6 +33,8 @@ def parse_model_provider(model_name: str) -> tuple[str, str]:
         return ("openrouter", model_name[len("openrouter/"):])
     elif model_name.startswith("bedrock/"):
         return ("bedrock", model_name[len("bedrock/"):])
+    elif model_name.startswith("claude-code/"):
+        return ("claude_code", model_name)
     elif model_name.startswith("claude-"):
         return ("anthropic", model_name)
     else:
@@ -112,6 +114,27 @@ def setup_llm(
                 kwargs["http_client"] = httpx.Client(verify=False)
                 kwargs["http_async_client"] = httpx.AsyncClient(verify=False)
             llm = ChatOpenAI(**kwargs)
+
+    elif provider == "claude_code":
+        # Route through the Claude Code host proxy (OpenAI-compatible)
+        proxy_base = None
+        if custom_llm_config:
+            base = custom_llm_config.get("baseUrl", "")
+            if base:
+                # Strip trailing /v1 if user saved full URL; we append /v1 below
+                proxy_base = base.rstrip("/")
+                if not proxy_base.endswith("/v1"):
+                    proxy_base = proxy_base + "/v1"
+        if not proxy_base:
+            proxy_base = "http://host.docker.internal:8099/v1"
+
+        llm = ChatOpenAI(
+            model=api_model,  # full "claude-code/<model>" ID expected by proxy
+            api_key="claude-code",  # proxy ignores key; placeholder required by SDK
+            base_url=proxy_base,
+            temperature=0,
+            max_tokens=16384,
+        )
 
     elif provider == "openai_compat":
         # Legacy: openai_compat/ prefix (env-var based)
@@ -232,11 +255,42 @@ def apply_project_settings(orchestrator, project_id: str) -> None:
                 custom_llm_config=custom_config,
             )
         except (ValueError, Exception) as e:
-            # LLM setup failed (missing API key, bad config, etc.)
-            # Leave llm as None — callers check and return a clear error.
-            logger.error(f"LLM setup failed for {new_model}: {e}")
-            orchestrator.llm = None
-            return
+            # LLM setup failed — try to fall back to Claude Code proxy before giving up.
+            # This covers the common case where the model is e.g. "claude-opus-4-6" but
+            # no Anthropic API key is set, yet the Claude Code proxy IS running.
+            fallback_used = False
+            if "API key is required" in str(e) or "api_key" in str(e).lower():
+                # Map plain model name to its claude-code/ equivalent
+                _plain_to_proxy = {
+                    "claude-opus-4-6":           "claude-code/claude-opus-4-6",
+                    "claude-sonnet-4-6":          "claude-code/claude-sonnet-4-6",
+                    "claude-haiku-4-5-20251001":  "claude-code/claude-haiku-4-5-20251001",
+                    "claude-sonnet-4-5-20251001": "claude-code/claude-sonnet-4-5-20251001",
+                    "claude-opus-4-5-20251101":   "claude-code/claude-opus-4-5-20251101",
+                }
+                # Find the Claude Code provider config (for custom proxy URL if set)
+                claude_code_p = _resolve_provider_key(user_providers, "claude_code")
+                proxy_model = _plain_to_proxy.get(new_model)
+                if proxy_model:
+                    try:
+                        fallback_llm = setup_llm(
+                            proxy_model,
+                            custom_llm_config=claude_code_p,
+                        )
+                        orchestrator.llm = fallback_llm
+                        orchestrator.model_name = proxy_model
+                        logger.warning(
+                            f"No API key for '{new_model}' — auto-falling back to "
+                            f"Claude Code proxy ({proxy_model})"
+                        )
+                        fallback_used = True
+                    except Exception as fe:
+                        logger.error(f"Claude Code proxy fallback also failed: {fe}")
+
+            if not fallback_used:
+                logger.error(f"LLM setup failed for {new_model}: {e}")
+                orchestrator.llm = None
+                return
 
         # Update Neo4j tool's LLM for text-to-Cypher queries
         if orchestrator.neo4j_manager:

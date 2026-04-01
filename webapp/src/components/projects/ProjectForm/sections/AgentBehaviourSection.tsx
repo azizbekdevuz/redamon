@@ -28,6 +28,11 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
   const dropdownRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
+  // Skills state
+  interface SkillEntry { id: string; name: string; description: string; category: string }
+  const [availableSkills, setAvailableSkills] = useState<SkillEntry[]>([])
+  const [skillsLoading, setSkillsLoading] = useState(true)
+
   // Fetch models on mount (pass userId for user-specific providers)
   useEffect(() => {
     const params = userId ? `?userId=${userId}` : ''
@@ -46,6 +51,17 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
       .catch(() => setModelsError(true))
       .finally(() => setModelsLoading(false))
   }, [userId])
+
+  // Fetch skills catalog from agentic service (via /api/skills proxy)
+  useEffect(() => {
+    fetch('/api/skills')
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data?.skills)) setAvailableSkills(data.skills)
+      })
+      .catch(() => {/* skills unavailable — silently degrade */})
+      .finally(() => setSkillsLoading(false))
+  }, [])
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -454,6 +470,119 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
                 onChange={(checked) => updateField('agentGuardrailEnabled', checked)}
               />
             </div>
+          </div>
+
+          {/* Claude Code Integration */}
+          <div className={styles.subSection}>
+            <h3 className={styles.subSectionTitle}>Claude Code — AI Code Analysis</h3>
+            <div className={styles.toggleRow}>
+              <div>
+                <span className={styles.toggleLabel}>Enable Claude Code</span>
+                <p className={styles.toggleDescription}>
+                  Give the agent a <code>claude_code</code> tool that runs the Claude Code CLI
+                  in non-interactive mode. The agent can use it to analyze discovered source code
+                  for vulnerabilities, hunt for hardcoded secrets, review config files, and
+                  examine JS bundles for exposed endpoints. Requires an Anthropic provider
+                  configured in Global Settings. Tool confirmation is enforced automatically.
+                </p>
+              </div>
+              <Toggle
+                checked={data.agentClaudeCodeEnabled ?? false}
+                onChange={(checked) => updateField('agentClaudeCodeEnabled', checked)}
+              />
+            </div>
+            {data.agentClaudeCodeEnabled && (
+              <div className={styles.fieldRow}>
+                <div className={styles.fieldGroup}>
+                  <label className={styles.fieldLabel}>Claude Binary Path</label>
+                  <input
+                    type="text"
+                    className="textInput"
+                    value={data.agentClaudeCodePath ?? 'claude'}
+                    onChange={(e) => updateField('agentClaudeCodePath', e.target.value)}
+                    placeholder="claude"
+                  />
+                  <span className={styles.fieldHint}>
+                    Path to the <code>claude</code> binary. Leave as <code>claude</code> if it is on PATH (default when installed via npm).
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Infosec-skills-Compatible Specialist Skills */}
+          <div className={styles.subSection}>
+            <h3 className={styles.subSectionTitle}>Specialist Skills</h3>
+            <p className={styles.toggleDescription}>
+              Inject specialist knowledge into the agent&apos;s system prompt. Up to 5 skills can be
+              active per session. Skills cover vulnerability types, tooling playbooks, scan modes,
+              frameworks, and technologies — powered by <strong>Infosec-skills</strong>.
+            </p>
+
+            {skillsLoading ? (
+              <div className={styles.toggleDescription}><Loader2 size={14} className={styles.modelSelectorSpinner} /> Loading skills…</div>
+            ) : availableSkills.length === 0 ? (
+              <p className={styles.toggleDescription} style={{ color: 'var(--color-warning)' }}>
+                Skills catalog unavailable — ensure the agent service is running.
+              </p>
+            ) : (
+              <>
+                {/* Group by category */}
+                {Array.from(new Set(availableSkills.map(s => s.category))).map(category => (
+                  <div key={category} className={styles.fieldGroup} style={{ marginBottom: '0.75rem' }}>
+                    <label className={styles.fieldLabel} style={{ textTransform: 'capitalize' }}>
+                      {category.replace(/_/g, ' ')}
+                    </label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      {availableSkills.filter(s => s.category === category).map(skill => {
+                        const enabledSkills: string[] = Array.isArray(data.agentSkills) ? (data.agentSkills as string[]) : []
+                        const isSelected = enabledSkills.includes(skill.id)
+                        const atMax = enabledSkills.length >= 5 && !isSelected
+
+                        const toggle = () => {
+                          const next = isSelected
+                            ? enabledSkills.filter(id => id !== skill.id)
+                            : atMax ? enabledSkills : [...enabledSkills, skill.id]
+                          updateField('agentSkills', next as FormData['agentSkills'])
+                        }
+
+                        return (
+                          <button
+                            key={skill.id}
+                            type="button"
+                            title={skill.description}
+                            onClick={toggle}
+                            disabled={atMax}
+                            style={{
+                              padding: '4px 10px',
+                              borderRadius: '4px',
+                              border: `1px solid ${isSelected ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                              background: isSelected ? 'var(--color-primary-light, rgba(59,130,246,0.15))' : 'transparent',
+                              color: isSelected ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                              cursor: atMax ? 'not-allowed' : 'pointer',
+                              opacity: atMax ? 0.5 : 1,
+                              fontSize: '0.78rem',
+                              fontWeight: isSelected ? 600 : 400,
+                              transition: 'all 0.15s',
+                            }}
+                          >
+                            {skill.name}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+
+                {/* Counter */}
+                {(() => {
+                  const count = Array.isArray(data.agentSkills) ? (data.agentSkills as string[]).length : 0
+                  return count > 0 ? (
+                    <p className={styles.fieldHint}>{count}/5 skill{count !== 1 ? 's' : ''} active</p>
+                  ) : null
+                })()}
+              </>
+            )}
           </div>
 
           {/* Kali Shell — Library Installation */}
